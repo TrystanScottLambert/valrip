@@ -1,0 +1,108 @@
+FUV_GALEX:
+  secondary_ucd: "em.UV.100-200nm"
+NUV_GALEX:
+  secondary_ucd: "em.UV.200-300nm"
+
+u_SDSS:
+  secondary_ucd: "em.opt.U"
+g_SDSS:
+  secondary_ucd: "em.opt"
+r_SDSS:
+  secondary_ucd: "em.opt.R"
+i_SDSS:
+  secondary_ucd: "em.opt.I"
+z_SDSS:
+  secondary_ucd: "em.opt"
+
+u_VST:
+  secondary_ucd: "em.opt.U"
+g_VST:
+  secondary_ucd: "em.opt"
+r_VST:
+  secondary_ucd: "em.opt"
+i_VST:
+  secondary_ucd: "em.opt.I"
+
+Z_VISTA:
+  secondary_ucd: "em.IR"
+Y_VISTA:
+  secondary_ucd: "em.IR.NIR"
+J_VISTA:
+  secondary_ucd: "em.IR.J"
+H_VISTA:
+  secondary_ucd: "em.IR.H"
+K_VISTA:
+  secondary_ucd: "em.IR.K"
+
+W1_WISE:
+  secondary_ucd: "em.IR.3-4um"
+I1_Spitzer:
+  secondary_ucd: "em.IR.3-4um"
+I2_Spitzer:
+  secondary_ucd: "em.IR.4-8um"
+W2_WISE:
+  secondary_ucd: "em.IR.4-8um"
+I3_Spitzer:
+  secondary_ucd: "em.IR.8-15um"
+I4_Spitzer:
+  secondary_ucd: "em.IR.15-30um"
+W3_WISE:
+  secondary_ucd: "em.IR.8-15um"
+W4_WISE:
+  secondary_ucd: "em.IR.15-30um"
+
+M24_Spitzer:
+  secondary_ucd: "em.IR.15-30um"
+M70_Spitzer:
+  secondary_ucd: "em.IR.60-100um"
+
+P70_Herschel:
+  secondary_ucd: "em.IR.60-100um"
+P100_Herschel:
+  secondary_ucd: "em.IR.60-100um"
+P160_Herschel:
+  secondary_ucd: "em.IR.FIR"
+S250_Herschel:
+  secondary_ucd: "em.IR.30-60um"
+S350_Herschel:
+  secondary_ucd: "em.IR.60-100um"
+S450_JCMT:
+  secondary_ucd: "em.mm.400-750GHz"
+S500_Herschel:
+  secondary_ucd: "em.mm.400-750GHz"
+S850_JCMT:
+  secondary_ucd: "em.mm.200-400GHz"
+
+Band_ionising_photons:
+  secondary_ucd: "em.UV.10-50nm"
+
+Band9_ALMA:
+  secondary_ucd: "em.mm.400-750GHz"
+Band8_ALMA:
+  secondary_ucd: "em.mm.400-750GHz"
+Band7_ALMA:
+  secondary_ucd: "em.mm.200-400GHz"
+Band6_ALMA:
+  secondary_ucd: "em.mm.200-400GHz"
+Band5_ALMA:
+  secondary_ucd: "em.mm.100-200GHz"
+Band4_ALMA:
+  secondary_ucd: "em.mm.100-200GHz"
+Band3_ALMA:
+  secondary_ucd: "em.mm.50-100GHz"
+
+BandX_VLA:
+  secondary_ucd: "em.radio.6-12GHz"
+BandC_VLA:
+  secondary_ucd: "em.radio.6-12GHz"
+BandS_VLA:
+  secondary_ucd: "em.radio.1500-3000MHz"
+BandL_VLA:
+  secondary_ucd: "em.radio.1500-3000MHz"
+Band_610MHz:
+  secondary_ucd: "em.radio.400-750MHz"
+Band_325MHz:
+  secondary_ucd: "em.radio.200-400MHz"
+Band_150MHz:
+  secondary_ucd: "em.radio.100-200MHz"
+

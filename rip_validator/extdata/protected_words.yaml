@@ -1,0 +1,224 @@
+ra:
+  common_mistakes:
+    - ascension
+    - r.a.
+    - r_a
+    - ra_deg
+    - ra_(deg)
+    - ra_degrees
+    - right_ascension
+    - ra_degrees
+  unit: ["deg"]
+  ucd: ["pos.eq.ra"]
+
+dec:
+  common_mistakes:
+    - declination
+    - dec_deg
+    - dec (deg)
+    - dec degrees
+    - decl.
+  unit: ["deg"]
+  ucd: ["pos.eq.dec"]
+
+vel:
+  common_mistakes:
+    - velocity
+    - vel_kms
+    - v_los
+    - vlos
+    - v_rad
+    - v(km/s)
+    - radial velocity
+  unit: ["km/s"]
+  ucd: ["phys.veloc"]
+
+mag:
+  common_mistakes:
+    - magnitude
+    - app_mag
+    - apparent_magnitude
+    - m_app
+  unit: ["mag"]
+  ucd: ["phot.mag"]
+
+mag_abs:
+  common_mistakes:
+    - absolute magnitude
+    - m_abs
+    - abs_mag
+    - M_abs
+  unit: ["mag"]
+  ucd: ["phot.mag;phys.magAbs"]
+
+err:
+  common_mistakes:
+    - error
+    - uncertainty
+    - stddev
+    - std
+    - measurement error
+  unit: ["various"]
+  ucd: ["stat.error"]
+
+flux_density:
+  common_mistakes:
+    - flux density
+    - f_nu
+    - fnu
+    - f_lambda
+    - flam
+    - fluxdens
+    - Snu
+  unit: ["Jy"]
+  ucd: ["phot.flux.density"]
+
+flux:
+  common_mistakes:
+    - total flux
+    - measured flux
+    - int_flux
+    - integrated flux
+    - f
+  unit: ["erg/s/cm^2"]
+  ucd: ["phot.flux"]
+
+luminosity:
+  common_mistakes:
+    - lum
+    - luminosity (erg/s)
+    - Lbol
+    - L_sun
+    - bolometric luminosity
+  unit: ["erg/s"]
+  ucd: ["phys.luminosity"]
+
+mass:
+  common_mistakes:
+    - stellar mass
+    - M
+    - Msol
+    - mass_msun
+    - mstar
+    - Mstar
+    - msun
+  unit: ["Msol"]
+  ucd: ["phys.mass"]
+
+sfr:
+  common_mistakes:
+    - star formation rate
+    - SFR_msun_yr
+    - sfr(msun/yr)
+  unit: ["Msol/yr"]
+  ucd: ["phys.SFR"]
+
+metallicity:
+  common_mistakes:
+    - gas metallicity
+    - stellar metallicity
+    - metal abundance
+  unit: ["dex"]
+  ucd: ["phys.abund.Z"]
+
+redshift:
+  common_mistakes:
+    - zobs
+    - z_spec
+    - z_phot
+    - spectroscopic redshift
+    - photometric redshift
+    - zcos
+    - z_obs
+  unit: ["unitless"]
+  ucd: ["src.redshift"]
+
+snr:
+  common_mistakes:
+    - signal to noise
+    - S/N
+    - sn_ratio
+    - signal/noise
+    - sn
+  unit: ["unitless"]
+  ucd: ["stat.snr"]
+
+ew:
+  common_mistakes:
+    - equivalent width
+    - eq width
+    - EW_line
+    - eqw
+  unit: ["Å"]
+  ucd: ["spect.line.eqWidth"]
+
+radius:
+  common_mistakes:
+    - rad
+    - r_phys
+    - r_ang
+    - radii
+    - object radius
+    - r (arcsec)
+    - r (kpc)
+  unit: ["arcsec", "kpc"]
+  ucd: ["phys.size"]
+
+sersic_index:
+  common_mistakes:
+    - n_sersic
+    - sersic n
+    - sersicn
+    - Sérsic index
+    - SersicN
+  unit: ["unitless"]
+  ucd: ["src.sersic.index"]
+
+axis_ratio:
+  common_mistakes:
+    - axrat
+    - axial_ratio
+    - b/a
+    - ellipticity
+    - axisratio
+  unit: ["unitless"]
+  ucd: ["src.ellipticity"]
+
+pos_ang:
+  common_mistakes:
+    - position angle
+    - pa
+    - posang
+    - P.A.
+    - PA(deg)
+    - position angle (deg)
+  unit: ["deg"]
+  ucd: ["pos.posAng"]
+
+line_width:
+  common_mistakes:
+    - linewidth
+    - line width
+    - FWHM
+    - sigma_line
+    - velocity_width
+    - dispersion
+  unit: ["km/s"]
+  ucd: ["spect.line.width"]
+
+sep:
+  common_mistakes:
+    - separation
+    - sep_dist
+    - distance between
+    - angular separation
+    - physical separation
+  unit: ["arcsec", "kpc"]
+  ucd: ["pos.angDistance"]
+
+pix:
+  common_mistakes:
+    - pixel
+    - pixels
+  unit: ["unitless"]
+  ucd: ["instr.pixel"]

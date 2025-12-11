@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DAML Schema",
+  "version": "1.0",
+  "type": "object",
+  "properties": {
+    "survey": {
+      "type": "string",
+      "description": "Required survey name"
+    },
+    "dataset": {
+      "type": "string",
+      "description": "Required dataset name"
+    },
+    "version": {
+      "type": [
+        "string",
+        "number"
+      ],
+      "description": "Required version (string, integer, or float)"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Required date in YYYY-MM-DD format (ISO-8601), must be enclosed in quotes"
+    },
+    "author": {
+      "type": "string",
+      "description": "Required lead author name and <email>"
+    },
+    "coauthors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional list of coauthor names and <emails>"
+    },
+    "DOIs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "DOI": {
+            "type": "string",
+            "description": "Valid DOI"
+          },
+          "type": {
+            "type": "string",
+            "description": "Type of DOI"
+          }
+        },
+        "required": [
+          "DOI",
+          "type"
+        ]
+      },
+      "description": "Optional list of DOIs relevant to this table"
+    },
+    "description": {
+      "type": "string",
+      "description": "Required short description of the dataset"
+    },
+    "comments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional list of comments or interesting facts"
+    },
+    "license": {
+      "type":  "string",
+      "description": "Optional license for the data"
+    },
+    "keywords": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional list of keywords"
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Required field name"
+          },
+          "version": {
+            "type": [
+              "string",
+              "number"
+            ],
+            "description": "Required version (string, integer, or float)"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ]
+      }
+    }
+  },
+  "required": [
+    "survey",
+    "dataset",
+    "version",
+    "date",
+    "author",
+    "description",
+    "tables"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WAVES-MAML Schema",
+  "version": "1.0",
+  "type": "object",
+  "properties": {
+    "survey": {
+      "type": "string",
+      "description": "Required survey name"
+    },
+    "dataset": {
+      "type": "string",
+      "description": "Required dataset name"
+    },
+    "table": {
+      "type": "string",
+      "description": "Required table name"
+    },
+    "version": {
+      "type": [
+        "string",
+        "number"
+      ],
+      "description": "Required version (string, integer, or float)"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Required date in YYYY-MM-DD format (ISO-8601), must be enclosed in quotes"
+    },
+    "author": {
+      "type": "string",
+      "pattern": "^* * <[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}>$",
+      "description": "Required lead author name and <email>"
+    },
+    "coauthors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^* * <[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}>$"
+      },
+      "description": "Optional list of coauthor names and <emails>"
+    },
+    "DOIs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "DOI": {
+            "type": "string",
+            "description": "Valid DOI"
+          },
+          "type": {
+            "type": "string",
+            "description": "Type of DOI"
+          }
+        },
+        "required": [
+          "DOI",
+          "type"
+        ]
+      },
+      "description": "Optional list of DOIs relevant to this table"
+    },
+    "depends": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "survey": {
+            "type": "string",
+            "description": "The name of the dependent survey."
+          },
+          "dataset": {
+            "type": "string",
+            "description": "The name of the dependent dataset."
+          },
+          "table": {
+            "type": "string",
+            "description": "The name of the dependent table."
+          },
+          "version": {
+            "type": [
+              "string",
+              "number"
+            ],
+            "description": "The version of the dependent table."
+          }
+        },
+        "required": [
+          "survey", 
+          "dataset", 
+          "table", 
+          "version"
+        ]
+      },
+      "description": "Optional list of tables this table depends on"
+    },
+    "description": {
+      "type": "string",
+      "description": "Required short description of the data"
+    },
+    "comments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional list of comments or interesting facts"
+    },
+    "license": {
+      "type":  "string",
+      "description": "Optional license for the data"
+    },
+    "keywords": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional list of keywords"
+    },
+    "MAML_version": {
+      "type": "number",
+      "const": 1.1,
+      "description": "Required version of the MAML schema"
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Required field name"
+          },
+          "unit": {
+            "type": "string",
+            "description": "Required unit of measurement"
+          },
+          "info": {
+            "type": "string",
+            "description": "Required short description"
+          },
+          "ucd": {
+            "type": "string",
+            "description": "Required string of semicolon-separated UCDs"
+          },
+          "data_type": {
+            "type": "string",
+            "description": "Required data type (e.g., int32, string, bool, float64)"
+          },
+          "qc": {
+            "type": "object",
+            "properties": {
+              "min": {
+                "type": "number",
+                "description": "Required data minimum value"
+              },
+              "max": {
+                "type": "number",
+                "description": "Required data maximum value"
+              }
+            },
+            "required": ["min", "max"],
+            "description": "Optional quality control parameters"
+          }
+        },
+        "required": [
+          "name",
+          "unit",
+          "info",
+          "ucd",
+          "data_type"
+        ]
+      },
+      "description": "Required list of all the columns or fields of this table"
+    }
+  },
+  "required": [
+    "survey",
+    "dataset",
+    "table",
+    "version",
+    "date",
+    "author",
+    "description",
+    "MAML_version",
+    "fields"
+  ],
+  "additionalProperties": false
+}
