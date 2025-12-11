@@ -35,26 +35,26 @@ Depending on your archetecture and operating system you will have to download th
 ### Apple Silicon chips (arm64)
 These are usually newer Macs.
 ```
-curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.3/valrip-macos-arm64
+curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.5/valrip-macos-arm64
 
 ```
 
 ### Apple Intel (x86_64)
 These are usually older Macs.
 ```
-curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.3/valrip-macos-x86_64
+curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.5/valrip-macos-x86_64
 ```
 
 ### Linux (x86_64)
 This is the most common supported archetecture for linux.
 ```
-curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.3/valrip-linux-amd64
+curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.5/valrip-linux-amd64
 ```
 
 ### Linux (arm64)
 More exotic linux distros may require the arm64 build.
 ```
-curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.3/valrip-linux-arm64
+curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.5/valrip-linux-arm64
 ```
 
 ## 3. Add valrip to your binary file
@@ -78,7 +78,7 @@ If that works without errors then the install is correct.
 If your name is Prof. Simon Driver, you can copy and paste the code snippet below and put it in your terminal.
 
 ```
-curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.3/valrip-macos-x86_64
+curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.5/valrip-macos-x86_64
 chmod +x valrip
 sudo mv valrip /usr/local/bin/
 ```
