@@ -1,0 +1,24 @@
+[project]
+name = "rip_validator"
+authors = [{name = "Trystan Lambert", email = "trystan.lambert@uwa.edu.au"}, 
+           {name = "Dior Etherton", email = "dior.etherton@uwa.edu.au"}]
+version = "1.0"
+description = "A validator for a WAVES submitted RIP. Tests for adherence to WAVES standards, the WAVES-MAML schema, and consistency between the data and the metadata."
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.1",
+    "polars>=1.36.1",
+    "pyaml==25.7.0",
+    "pydantic==2.12.5",
+    "pyarrow==22.0.0",
+    "pymaml==0.6.3",
+    "rich==14.2.0",
+
+]
+
+[project.scripts]
+valrip = "rip_validator.validate:cli"
+
+[build-system]
+requires = ["flit_core<4"]
+build-backend = "flit_core.buildapi"
