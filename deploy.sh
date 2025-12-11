@@ -2,15 +2,15 @@
 
 # Clone repositories
 git clone git@dev.aao.org.au:waves/twg6/rip-validator.git
-git clone git@github.com:TrystanScottLambert/testing_deployment.git
+git clone git@github.com:TrystanScottLambert/valrip.git
 
 # Copy files
-cp -r rip-validator/rip-validator/ testing_deployment/
-cp rip-validator/requirements.txt testing_deployment/
-cp rip-validator/pyproject.toml testing_deployment/
-cp rip-validator/valrip.spec testing_deployment/
+cp -r rip-validator/rip_validator valrip/
+cp rip-validator/requirements.txt valrip/
+cp rip-validator/pyproject.toml valrip/
+cp rip-validator/valrip.spec valrip/
 
-cd testing_deployment
+cd valrip
 
 # Commit changes
 git add .
@@ -30,4 +30,4 @@ git push origin $NEW_TAG
 echo "Deployed with new tag: $NEW_TAG"
 
 rm -rf rip-validator/
-rm -rf testing_deployment/
+rm -rf valrip/
