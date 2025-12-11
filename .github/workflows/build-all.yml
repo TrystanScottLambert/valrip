@@ -1,0 +1,185 @@
+name: Build and Release Binaries
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-macos-arm:
+    name: Build macOS ARM64
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Build macOS ARM64 binary
+        run: |
+          pyinstaller \
+            --onefile \
+            --target-arch arm64 \
+            --name valrip \
+            --add-data "rip_validator/extdata:rip_validator/extdata" \
+            --add-data "rip_validator/schemas:rip_validator/schemas" \
+            --hidden-import rip_validator \
+            --hidden-import rip_validator.cli \
+            --hidden-import rip_validator.column_name_validator \
+            --hidden-import rip_validator.config \
+            --hidden-import rip_validator.data_and_metadata_validator \
+            --hidden-import rip_validator.data_types \
+            --hidden-import rip_validator.data_validator \
+            --hidden-import rip_validator.filter_check \
+            --hidden-import rip_validator.helper_validator_methods \
+            --hidden-import rip_validator.metadata_validator \
+            --hidden-import rip_validator.model_daml \
+            --hidden-import rip_validator.model_waves_maml \
+            --hidden-import rip_validator.status \
+            --hidden-import rip_validator.validate \
+            rip_validator/cli.py
+          mv dist/valrip dist/valrip-macos-arm64
+
+      - name: Upload macOS ARM64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: valrip-macos-arm64
+          path: dist/valrip-macos-arm64
+
+  build-macos-intel:
+    name: Build macOS Intel x86_64
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Build macOS Intel binary
+        run: |
+          pyinstaller \
+            --onefile \
+            --target-arch x86_64 \
+            --name valrip \
+            --add-data "rip_validator/extdata:rip_validator/extdata" \
+            --add-data "rip_validator/schemas:rip_validator/schemas" \
+            --hidden-import rip_validator \
+            --hidden-import rip_validator.cli \
+            --hidden-import rip_validator.column_name_validator \
+            --hidden-import rip_validator.config \
+            --hidden-import rip_validator.data_and_metadata_validator \
+            --hidden-import rip_validator.data_types \
+            --hidden-import rip_validator.data_validator \
+            --hidden-import rip_validator.filter_check \
+            --hidden-import rip_validator.helper_validator_methods \
+            --hidden-import rip_validator.metadata_validator \
+            --hidden-import rip_validator.model_daml \
+            --hidden-import rip_validator.model_waves_maml \
+            --hidden-import rip_validator.status \
+            --hidden-import rip_validator.validate \
+            rip_validator/cli.py
+          mv dist/valrip dist/valrip-macos-x86_64
+
+      - name: Upload macOS Intel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: valrip-macos-x86_64
+          path: dist/valrip-macos-x86_64
+
+  build-linux-amd64:
+    name: Build Linux x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python and PyInstaller
+        run: |
+          sudo apt update
+          pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Build Linux x86_64 binary
+        run: |
+          pyinstaller valrip.spec
+          mv dist/valrip dist/valrip-linux-amd64
+
+      - name: Upload Linux x86_64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: valrip-linux-amd64
+          path: dist/valrip-linux-amd64
+
+  build-linux-arm64:
+    name: Build Linux ARM64
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python and PyInstaller
+        run: |
+          sudo apt update
+          pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Build Linux ARM64 binary
+        run: |
+          pyinstaller valrip.spec
+          mv dist/valrip dist/valrip-linux-arm64
+
+      - name: Upload Linux ARM64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: valrip-linux-arm64
+          path: dist/valrip-linux-arm64
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - build-macos-arm
+      - build-macos-intel
+      - build-linux-amd64
+      - build-linux-arm64
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/valrip-macos-arm64/valrip-macos-arm64
+            artifacts/valrip-macos-x86_64/valrip-macos-x86_64
+            artifacts/valrip-linux-amd64/valrip-linux-amd64
+            artifacts/valrip-linux-arm64/valrip-linux-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
