@@ -1,3 +1,3 @@
 uberID:
   unit: "unitless"
-  ucd: "meta.main;meta.id"
+  ucd: "meta.id;meta.main"

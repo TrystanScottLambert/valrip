@@ -12,6 +12,7 @@ from .data_validator import validate_table
 from .column_name_validator import validate_column_name
 from .metadata_validator import read_and_validate_maml
 from .data_and_metadata_validator import validate_data_and_metadata
+from .make_maml import make_maml
 
 
 @dataclass
@@ -62,11 +63,13 @@ def cli():
 @click.option(
     "--print_output",
     default=True,
+    is_flag=True,
     help="Boolean flag that indicates whether to print the output or not.",
 )
 @click.option(
     "--verbose",
     default=False,
+    is_flag=True,
     help="Boolean flag that indicates whether to print all output even when it might not be useful, ot not.",
 )
 def validate_parquet(
@@ -164,6 +167,16 @@ def _validate_maml_and_parquet(file_name: str, print_output=True, verbose=False)
             print(f"{'=' * 80}")
 
 
+@click.command(name="generate")
+@click.argument("parquet_file_name")
+def gen_maml(parquet_file_name: str):
+    """
+    Generates a skeletal-MAML from the provided Parquet file. 
+    """
+    make_maml(parquet_file_name)
+
+
 cli.add_command(validate_maml)
 cli.add_command(validate_parquet)
 cli.add_command(validate_maml_and_parquet)
+cli.add_command(gen_maml)

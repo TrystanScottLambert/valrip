@@ -13,7 +13,7 @@ import yaml
 
 from pydantic_core import ValidationError
 
-from .helper_validator_methods import print_header
+from .helper_validator_methods import print_header, WHITESPACE_PADDING_LENGTH
 from .model_waves_maml import WavesMamlSchema
 from .data_types import SurveyName, License, ANSI
 
@@ -106,6 +106,7 @@ class ColumnMetaData:
         maml_dict = self.__dict__
         maml_dict["qc"] = qc
         return maml_dict
+
 
 @dataclass
 class Columns:
@@ -346,8 +347,6 @@ def _split_author_string(author: str) -> Author:
     return Author(first_name, last_name, email)
 
 
-# TODO #5: make validation output consistent (put the validation into a Report object like in the 
-# column validation and the table validation). Also implement the verbose output properly. 
 def read_and_validate_maml(maml_file: str, print_output=True, verbose=False) -> MamlMetaData | None:
     """
     Reads in a maml file and parses it into a MetaData object, validating it in
@@ -361,16 +360,26 @@ def read_and_validate_maml(maml_file: str, print_output=True, verbose=False) -> 
     try:
         WavesMamlSchema.model_validate(maml_dict)
         if print_output:
-          print(f"{ANSI.BOLD}Overall Status:{ANSI.RESET} {ANSI.GREEN}VALID{ANSI.RESET}")
+            print(f"{ANSI.BOLD}Overall Status:{ANSI.RESET} {ANSI.GREEN}VALID{ANSI.RESET}")
     except ValidationError as e:
         if print_output:
-          print(f"{ANSI.BOLD}Overall Status:{ANSI.RESET} {ANSI.RED}INVALID{ANSI.RESET}")
-        for exception in e.errors():
-            invalid_field = exception["loc"][-1]
-            if print_output:
-              print(f"\n{ANSI.BOLD}{invalid_field} ({exception["input"]}):{ANSI.RESET} {exception["msg"]} {ANSI.RED}✗ FAIL{ANSI.RESET}")
+            print(f"{ANSI.BOLD}Overall Status:{ANSI.RESET} {ANSI.RED}INVALID{ANSI.RESET}")
+            print(f"\n{ANSI.BOLD}Validation Checks:{ANSI.RESET}")
+            print(f"{'-' * 80}")
+
+            error_fields = {exception["loc"][-1]: exception for exception in e.errors()}
+            for field in maml_dict.keys():
+                if field in error_fields.keys():
+                    print(f"\n{ANSI.BOLD}{field.ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RED}✗ FAIL{ANSI.RESET}")
+                    print(f"\n   {ANSI.RED} → See: {error_fields[field]["input"]}. {error_fields[field]["msg"]}.{ANSI.RESET}")
+                elif verbose:
+                    print(f"\n{ANSI.BOLD}{field.ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.GREEN}✓ PASS{ANSI.RESET}")
         return None
     
+    if print_output and verbose:
+        for field in maml_dict.keys():
+            print(f"\n{ANSI.BOLD}{field.ljust(WHITESPACE_PADDING_LENGTH)}:{ANSI.RESET} {ANSI.GREEN}✓ PASS{ANSI.RESET}")
+
     if "coauthors" in maml_dict and maml_dict["coauthors"]:
         coauthors = []
         for coauthor in maml_dict["coauthors"]:

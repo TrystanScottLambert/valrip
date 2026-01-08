@@ -221,4 +221,5 @@ pix:
     - pixel
     - pixels
   unit: ["unitless"]
-  ucd: ["instr.pixel"]
+  ucd: ["instr.param;instr.pixel"]
+

@@ -2,6 +2,8 @@ import polars as pl
 
 from .data_types import ANSI, ClosedInterval
 
+WHITESPACE_PADDING_LENGTH = 71
+
 def check_data_type(polars_dtype: pl.DataType, waves_type: str) -> bool:
     return str(polars_dtype).lower() == waves_type.lower()
 
@@ -21,7 +23,9 @@ def check_column_range(
     ).item()
     return contained
 
+
 def print_header(heading):
       print(f"\n{ANSI.BOLD}{'=' * 80}{ANSI.RESET}")
       print(f"{ANSI.BOLD}{heading}{ANSI.RESET}")
       print(f"{ANSI.BOLD}{'=' * 80}{ANSI.RESET}")
+
