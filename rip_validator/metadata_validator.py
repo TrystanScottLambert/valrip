@@ -4,13 +4,12 @@ Helper functions for building the metadata for the datasets.
 """
 
 from dataclasses import dataclass
-import re
 from datetime import datetime
 import polars as pl
 import httpx
 import json
 import yaml
-
+from email_validator import EmailNotValidError, validate_email
 from pydantic_core import ValidationError
 
 from .helper_validator_methods import print_header, WHITESPACE_PADDING_LENGTH
@@ -20,13 +19,14 @@ from .data_types import SurveyName, License, ANSI
 from .config import protected_words, filter_words, exceptions
 
 
-def _is_valid_email(email: str) -> bool:
+def _is_valid_email(email: str) -> None:
     """
-    Checking that an email is correct. Very basic validation checking . and @
+    Raise ValueError if email is invalid (Pydantic-friendly).
     """
-    if re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
-        return True
-    return False
+    try:
+        validate_email(email, check_deliverability=True)
+    except EmailNotValidError as e:
+        raise ValueError(f"Invalid email address '{email}': {e}")
 
 
 @dataclass
@@ -39,8 +39,7 @@ class Author:
         """
         Validating email.
         """
-        if not _is_valid_email(self.email):
-            raise ValueError("Email is not valid")
+        _is_valid_email(self.email)
 
     def __str__(self):
         return f"{self.name.capitalize()} {self.surname.capitalize()} <{self.email}>"
@@ -347,46 +346,60 @@ def _split_author_string(author: str) -> Author:
     return Author(first_name, last_name, email)
 
 
-def read_and_validate_maml(maml_file: str, print_output=True, verbose=False) -> MamlMetaData | None:
+def read_and_validate_maml(
+    maml_file: str, print_output=True, verbose=False
+) -> MamlMetaData | None:
     """
     Reads in a maml file and parses it into a MetaData object, validating it in
     the process.
     """
     if print_output:
-      print_header("MAML Validation Report")
-      print(f"\n{ANSI.BOLD}File Name:{ANSI.RESET} {maml_file}")
+        print_header("MAML Validation Report")
+        print(f"\n{ANSI.BOLD}File Name:{ANSI.RESET} {maml_file}")
     with open(maml_file) as file:
         maml_dict = yaml.safe_load(file)
     try:
         WavesMamlSchema.model_validate(maml_dict)
         if print_output:
-            print(f"{ANSI.BOLD}Overall Status:{ANSI.RESET} {ANSI.GREEN}VALID{ANSI.RESET}")
+            print(
+                f"{ANSI.BOLD}Overall Status:{ANSI.RESET} {ANSI.GREEN}VALID{ANSI.RESET}"
+            )
     except ValidationError as e:
         if print_output:
-            print(f"{ANSI.BOLD}Overall Status:{ANSI.RESET} {ANSI.RED}INVALID{ANSI.RESET}")
+            print(
+                f"{ANSI.BOLD}Overall Status:{ANSI.RESET} {ANSI.RED}INVALID{ANSI.RESET}"
+            )
             print(f"\n{ANSI.BOLD}Validation Checks:{ANSI.RESET}")
             print(f"{'-' * 80}")
 
             error_fields = {exception["loc"][-1]: exception for exception in e.errors()}
             for field in maml_dict.keys():
                 if field in error_fields.keys():
-                    print(f"\n{ANSI.BOLD}{field.ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RED}✗ FAIL{ANSI.RESET}")
-                    print(f"\n   {ANSI.RED} → See: {error_fields[field]["input"]}. {error_fields[field]["msg"]}.{ANSI.RESET}")
+                    print(
+                        f"\n{ANSI.BOLD}{field.ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RED}✗ FAIL{ANSI.RESET}"
+                    )
+                    print(
+                        f"\n   {ANSI.RED} → See: {error_fields[field]['input']}. {error_fields[field]['msg']}.{ANSI.RESET}"
+                    )
                 elif verbose:
-                    print(f"\n{ANSI.BOLD}{field.ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.GREEN}✓ PASS{ANSI.RESET}")
+                    print(
+                        f"\n{ANSI.BOLD}{field.ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.GREEN}✓ PASS{ANSI.RESET}"
+                    )
         return None
-    
+
     if print_output and verbose:
         for field in maml_dict.keys():
-            print(f"\n{ANSI.BOLD}{field.ljust(WHITESPACE_PADDING_LENGTH)}:{ANSI.RESET} {ANSI.GREEN}✓ PASS{ANSI.RESET}")
+            print(
+                f"\n{ANSI.BOLD}{field.ljust(WHITESPACE_PADDING_LENGTH)}:{ANSI.RESET} {ANSI.GREEN}✓ PASS{ANSI.RESET}"
+            )
 
     if "coauthors" in maml_dict and maml_dict["coauthors"]:
         coauthors = []
         for coauthor in maml_dict["coauthors"]:
-          try:
-              coauthors.append(_split_author_string(coauthor))
-          except ValueError:
-              pass
+            try:
+                coauthors.append(_split_author_string(coauthor))
+            except ValueError:
+                pass
         if not coauthors:
             coauthors = None
     else:

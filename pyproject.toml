@@ -7,12 +7,15 @@ description = "A validator for a WAVES submitted RIP. Tests for adherence to WAV
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.1",
+    "email-validator==2.3.0",
+    "httpx==0.28.1",
     "polars>=1.36.1",
     "pyaml==25.7.0",
     "pydantic==2.12.5",
-    "pyarrow==22.0.0",
     "pymaml==0.6.3",
     "rich==14.2.0",
+    "thefuzz==0.22.1",
+    "yaml-to-markdown==0.1.1744598339",
 
 ]
 
