@@ -42,28 +42,28 @@ Use `curl` to download the correct binary using `curl`:
 These are usually newer Macs.
 
 ```
-curl -L -o valrip https://github.com/TrystanScottLambert/testing_deployment/releases/download/v0.0.6/valrip-macos-arm64
+curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.6/valrip-macos-arm64
 ```
 
 #### Apple Intel (x86_64)
 These are usually older Macs.
 
 ```
-curl -L -o valrip https://github.com/TrystanScottLambert/testing_deployment/releases/download/v0.0.6/valrip-macos-x86_64
+curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.6/valrip-macos-x86_64
 ```
 
 ### Linux
 #### AMD64 (x86_64)
 This is the most common supported archetecture for linux.
 ```
-curl -L -o valrip https://github.com/TrystanScottLambert/testing_deployment/releases/download/v0.0.6/valrip-linux-amd64
+curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.6/valrip-linux-amd64
 ```
 
 #### Linux (arm64)
 More exotic linux distros may require the arm64 build.
 
 ```
-curl -L -o valrip https://github.com/TrystanScottLambert/testing_deployment/releases/download/v0.0.6/valrip-linux-arm64
+curl -L -o valrip https://github.com/TrystanScottLambert/valrip/releases/download/v0.0.6/valrip-linux-arm64
 ```
 
 ---
