@@ -24,7 +24,6 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install pyinstaller
-          pip install -r requirements.txt
           pip install -e .
 
       - name: Build macOS ARM64 binary
@@ -73,7 +72,6 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install pyinstaller
-          pip install -r requirements.txt
           pip install -e .
 
       - name: Build macOS Intel binary
@@ -118,7 +116,6 @@ jobs:
           sudo apt update
           pip install --upgrade pip
           pip install pyinstaller
-          pip install -r requirements.txt
           pip install -e .
 
       - name: Build Linux x86_64 binary
@@ -143,7 +140,6 @@ jobs:
           sudo apt update
           pip install --upgrade pip
           pip install pyinstaller
-          pip install -r requirements.txt
           pip install -e .
 
       - name: Build Linux ARM64 binary
