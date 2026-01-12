@@ -145,7 +145,7 @@ class DataValueReport:
 
           no_999_status = status(self.no_999)
           no_999_info = ""
-          if self.no_999.state == State.FAIL and verbose:
+          if self.no_999.state == State.FAIL or verbose:
               bad_columns = self.no_999.message.split(";;;")
               for column_name in bad_columns:
                   no_999_info += f"\n    {ANSI.RED}→ Column '{column_name}' has -999 values. Using -999 as a None value is not permited.{ANSI.RESET}"

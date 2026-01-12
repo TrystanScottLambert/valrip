@@ -13,64 +13,64 @@ def cli():
 @click.command(name="parquet")
 @click.argument("file_name")
 @click.option(
-    "--print_output",
-    default=True,
-    is_flag=True,
-    help="Boolean flag that indicates whether to print the output or not.",
-)
-@click.option(
-    "--verbose",
+    "--quiet", "-q",
     default=False,
     is_flag=True,
-    help="Boolean flag that indicates whether to print all output even when it might not be useful, ot not.",
+    help="Boolean flag that indicates whether to run in quiet mode, or not.",
 )
-def validate_parquet(file_name: str, print_output=True, verbose=False):
+@click.option(
+    "--verbose", "-v",
+    default=False,
+    is_flag=True,
+    help="Boolean flag that indicates whether to print all output even when it might not be useful, or not.",
+)
+def validate_parquet(file_name: str, quiet=False, verbose=False):
     """
     Does the overall validation for the parquet file.
     """
     from .cli_parquet import _validate_parquet
 
-    return _validate_parquet(file_name, print_output, verbose)
+    return _validate_parquet(file_name, quiet, verbose)
 
 
 @click.command(name="maml")
 @click.argument("file_name")
 @click.option(
-    "--print_output",
-    default=True,
-    is_flag=True,
-    help="Boolean flag that indicates whether to print the output or not.",
-)
-@click.option(
-    "--verbose",
+    "--quiet", "-q",
     default=False,
     is_flag=True,
-    help="Boolean flag that indicates whether to print all output even when it might not be useful, ot not.",
+    help="Boolean flag that indicates whether to run in quiet mode, or not.",
 )
-def validate_maml(file_name: str, print_output=True, verbose=False):
+@click.option(
+    "--verbose", "-v",
+    default=False,
+    is_flag=True,
+    help="Boolean flag that indicates whether to print all output even when it might not be useful, or not.",
+)
+def validate_maml(file_name: str, quiet=False, verbose=False):
     """
     Does the overall validation for the MAML file.
     """
     from .cli_maml import _validate_maml
 
-    _validate_maml(file_name, print_output, verbose)
+    _validate_maml(file_name, quiet, verbose)
 
 
 @click.command(name="both")
 @click.argument("file_name")
 @click.option(
-    "--print_output",
-    default=True,
-    is_flag=True,
-    help="Boolean flag that indicates whether to print the output or not.",
-)
-@click.option(
-    "--verbose",
+    "--quiet", "-q",
     default=False,
     is_flag=True,
-    help="Boolean flag that indicates whether to print all output even when it might not be useful, ot not.",
+    help="Boolean flag that indicates whether to run in quiet mode, or not.",
 )
-def validate_maml_and_parquet(file_name: str, print_output=True, verbose=False):
+@click.option(
+    "--verbose", "-v",
+    default=False,
+    is_flag=True,
+    help="Boolean flag that indicates whether to print all output even when it might not be useful, or not.",
+)
+def validate_maml_and_parquet(file_name: str, quiet=False, verbose=False):
     """
     Performs the validation for a pair of MAML and Parquet files together.
     This involves validating both the MAML file and the Parquet
@@ -78,7 +78,7 @@ def validate_maml_and_parquet(file_name: str, print_output=True, verbose=False):
     """
     from .cli_both import _validate_maml_and_parquet
 
-    _validate_maml_and_parquet(file_name, print_output, verbose)
+    _validate_maml_and_parquet(file_name, quiet, verbose)
 
 
 @click.command(name="generate")

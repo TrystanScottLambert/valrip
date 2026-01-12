@@ -347,25 +347,25 @@ def _split_author_string(author: str) -> Author:
 
 
 def read_and_validate_maml(
-    maml_file: str, print_output=True, verbose=False
+    maml_file: str, quiet=False, verbose=False
 ) -> MamlMetaData | None:
     """
     Reads in a maml file and parses it into a MetaData object, validating it in
     the process.
     """
-    if print_output:
+    if not quiet:
         print_header("MAML Validation Report")
         print(f"\n{ANSI.BOLD}File Name:{ANSI.RESET} {maml_file}")
     with open(maml_file) as file:
         maml_dict = yaml.safe_load(file)
     try:
         WavesMamlSchema.model_validate(maml_dict)
-        if print_output:
+        if not quiet:
             print(
                 f"{ANSI.BOLD}Overall Status:{ANSI.RESET} {ANSI.GREEN}VALID{ANSI.RESET}"
             )
     except ValidationError as e:
-        if print_output:
+        if not quiet:
             print(
                 f"{ANSI.BOLD}Overall Status:{ANSI.RESET} {ANSI.RED}INVALID{ANSI.RESET}"
             )
@@ -387,7 +387,7 @@ def read_and_validate_maml(
                     )
         return None
 
-    if print_output and verbose:
+    if not quiet and verbose:
         for field in maml_dict.keys():
             print(
                 f"\n{ANSI.BOLD}{field.ljust(WHITESPACE_PADDING_LENGTH)}:{ANSI.RESET} {ANSI.GREEN}✓ PASS{ANSI.RESET}"

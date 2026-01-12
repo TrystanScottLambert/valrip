@@ -19,7 +19,7 @@ class DataValidationReport:
 
 
 def validate_df(
-    df: pl.DataFrame, name_of_table: str, print_output=True, verbose=False
+    df: pl.DataFrame, name_of_table: str, quiet=False, verbose=False
 ) -> DataValidationReport:
     """
     Validates a data frame both the data and the column names.
@@ -32,7 +32,7 @@ def validate_df(
     # Check if all column names are valid
     names_valid = all(report.valid for report in column_reports)
 
-    if print_output:
+    if not quiet:
         table_report.print_report(verbose)
         print_header("Column Name Validation Report")
 
@@ -45,10 +45,10 @@ def validate_df(
 
 
 def _validate_parquet(
-    file_name: str, print_output=True, verbose=False
+    file_name: str, quiet=False, verbose=False
 ) -> DataValidationReport:
     """
     Does the overall validation for the parquet file.
     """
     df = pl.read_parquet(file_name)
-    return validate_df(df, file_name, print_output, verbose)
+    return validate_df(df, file_name, quiet, verbose)
