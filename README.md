@@ -35,7 +35,7 @@ uname -m
 
 ## 2. Download the appropriate binary
 
-Use `curl` to download the correct binary using `curl`:
+Download the correct binary using `curl`:
 
 ### macOS
 #### Apple Silicon (arm64)
