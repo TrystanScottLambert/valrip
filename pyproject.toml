@@ -18,11 +18,6 @@ dependencies = [
     "yaml-to-markdown==0.1.1744598339",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest==9.0",
-]
-
 [project.scripts]
 valrip = "rip_validator.validate:cli"
 
