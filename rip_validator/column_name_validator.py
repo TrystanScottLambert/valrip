@@ -27,6 +27,7 @@ NOT_ALLOWED = [
     "blahblahblah",
     "abc123",
     "xyz",
+    "duff",
 ]
 
 

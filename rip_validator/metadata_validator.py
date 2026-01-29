@@ -26,7 +26,7 @@ def _is_valid_email(email: str) -> None:
     try:
         validate_email(email, check_deliverability=True)
     except EmailNotValidError as e:
-        raise ValueError(f"Invalid email address '{email}': {e}")
+        raise ValueError(f"Invalid email address '{email}': {e}.")
 
 
 @dataclass
@@ -196,7 +196,7 @@ class Columns:
         """
         if self.columns[column_name].data_type == "string":
             raise ValueError(
-                f"Cannot set the min max of a 'string' type column: '{column_name}'"
+                f"Cannot set the min max of a 'string' type column: '{column_name}'."
             )
         try:
             self.columns[column_name].qc = MinMax(min=min, max=max)
@@ -270,6 +270,7 @@ class MamlMetaData:
     version: str
     author: Author
     description: str
+    maml_version: float
     fields: Columns
     date: str = str(datetime.today()).split(" ")[0]
     coauthors: list[Author] | None = None
@@ -278,7 +279,6 @@ class MamlMetaData:
     comments: list[str] | None = None
     license: License = License.PRIVATE
     keywords: list[str] | None = None
-    maml_version: str = "v1.1"
 
     def add_coauthor(self, coauthor: Author) -> None:
         """
@@ -286,7 +286,7 @@ class MamlMetaData:
         """
         if not isinstance(coauthor, Author):
             raise ValueError(
-                "Coauthor needs to be an 'Author' type. Use Author('<name>', '<surname>', '<email>')"
+                "Coauthor needs to be an 'Author' type. Use Author('<name>', '<surname>', '<email>')."
             )
         if not self.coauthors:
             self.coauthors = [coauthor]
@@ -346,6 +346,61 @@ def _split_author_string(author: str) -> Author:
     return Author(first_name, last_name, email)
 
 
+def get_error_field_location(loc: tuple[int | str, ...]):
+    """
+    Makes a human-readable string of the "loc" tuple provided by pydantic's error handling. 
+
+    See https://docs.pydantic.dev/latest/errors/errors/ for more details. 
+    
+    :param loc: The "loc" entry of the pydantic ValidationError error object. 
+    :type loc: tuple[int | str, ...]
+    """
+    loc_string = ""
+    for l in loc:
+        # For some reason, pydantic refers to 'float' in the location of float elements. 
+        # It doesn't list the type in other types (string, objects, etc.), so we have 
+        # introduced this work around where we don't add the 'float' term to the error location. 
+        if isinstance(l, str) and l != 'float':
+          loc_string += f" > {l}"
+        elif isinstance(l, int):
+            loc_string += f" > element {l}"
+        
+    return loc_string
+
+
+def print_correct_fields(verbose: bool, fields: list[str]):
+  if verbose:
+    # Print the correct fields. 
+    for field in fields:
+        field_loc = f" > {field}"
+        print(
+            f"\n{ANSI.BOLD}{field_loc.ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RESET}{ANSI.GREEN}✓ PASS{ANSI.RESET}"
+        )
+
+
+# This Loader is used to override pyyamls (overly eager) interpretation of some strings as dates. 
+# See https://stackoverflow.com/a/37958106 for more details. 
+class NoDatesSafeLoader(yaml.SafeLoader):
+    @classmethod
+    def remove_implicit_resolver(cls, tag_to_remove):
+        """
+        Remove implicit resolvers for a particular tag
+
+        Takes care not to modify resolvers in super classes.
+
+        We want to load datetimes as strings, not dates, because we
+        go on to serialise as json which doesn't have the advanced types
+        of yaml, and leads to incompatibilities down the track.
+        """
+        if not 'yaml_implicit_resolvers' in cls.__dict__:
+            cls.yaml_implicit_resolvers = cls.yaml_implicit_resolvers.copy()
+
+        for first_letter, mappings in cls.yaml_implicit_resolvers.items():
+            cls.yaml_implicit_resolvers[first_letter] = [(tag, regexp) 
+                                                         for tag, regexp in mappings
+                                                         if tag != tag_to_remove]
+
+
 def read_and_validate_maml(
     maml_file: str, quiet=False, verbose=False
 ) -> MamlMetaData | None:
@@ -357,7 +412,9 @@ def read_and_validate_maml(
         print_header("MAML Validation Report")
         print(f"\n{ANSI.BOLD}File Name:{ANSI.RESET} {maml_file}")
     with open(maml_file) as file:
-        maml_dict = yaml.safe_load(file)
+        # See https://yaml.org/type/timestamp.html for the URI to remove. 
+        NoDatesSafeLoader.remove_implicit_resolver('tag:yaml.org,2002:timestamp')
+        maml_dict = yaml.load(file, Loader=NoDatesSafeLoader)
     try:
         WavesMamlSchema.model_validate(maml_dict)
         if not quiet:
@@ -372,26 +429,36 @@ def read_and_validate_maml(
             print(f"\n{ANSI.BOLD}Validation Checks:{ANSI.RESET}")
             print(f"{'-' * 80}")
 
-            error_fields = {exception["loc"][-1]: exception for exception in e.errors()}
-            for field in maml_dict.keys():
-                if field in error_fields.keys():
-                    print(
-                        f"\n{ANSI.BOLD}{field.ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RED}✗ FAIL{ANSI.RESET}"
-                    )
-                    print(
-                        f"\n   {ANSI.RED} → See: {error_fields[field]['input']}. {error_fields[field]['msg']}.{ANSI.RESET}"
-                    )
-                elif verbose:
-                    print(
-                        f"\n{ANSI.BOLD}{field.ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.GREEN}✓ PASS{ANSI.RESET}"
-                    )
+            error_fields = {}
+            for exception in e.errors():
+                field = exception["loc"][0]
+                field_exceptions = [ex for ex in e.errors() if ex["loc"][0] == field]
+                error_fields[field] = field_exceptions
+            
+            print_correct_fields(verbose, maml_dict.keys() - error_fields.keys())
+
+            # Print the incorrect/missing fields. 
+            for field in error_fields.keys():
+                for exception in error_fields[field]:
+                  if exception["type"] == "missing":
+                      print(
+                      f"\n{ANSI.BOLD}{get_error_field_location(exception["loc"]).ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RED}✗ FAIL{ANSI.RESET}"
+                      )
+                      print(
+                          f"\n   {ANSI.RED} → Missing element. {exception['msg']}{ANSI.RESET}"
+                      )
+                  else:
+                      print(
+                          f"\n{ANSI.BOLD}{get_error_field_location(exception["loc"]).ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RED}✗ FAIL{ANSI.RESET}"
+                      )
+                      print(
+                          f"\n   {ANSI.RED} → Incorrect element: {exception['input']}. {exception['msg']}{ANSI.RESET}"
+                      )
         return None
 
-    if not quiet and verbose:
-        for field in maml_dict.keys():
-            print(
-                f"\n{ANSI.BOLD}{field.ljust(WHITESPACE_PADDING_LENGTH)}:{ANSI.RESET} {ANSI.GREEN}✓ PASS{ANSI.RESET}"
-            )
+    # Print the correct fields. 
+    if not quiet:
+        print_correct_fields(verbose, maml_dict.keys())
 
     if "coauthors" in maml_dict and maml_dict["coauthors"]:
         coauthors = []

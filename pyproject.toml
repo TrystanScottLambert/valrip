@@ -16,7 +16,7 @@ dependencies = [
     "rich==14.2.0",
     "thefuzz==0.22.1",
     "yaml-to-markdown==0.1.1744598339",
-
+    "pytest==9.0",
 ]
 
 [project.scripts]

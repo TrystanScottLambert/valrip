@@ -7,6 +7,9 @@ class SurveyName(Enum):
     ORCHIDSS = "WAVES-ORCHIDSS"
     
 
+MAML_VERSION = 1.1
+
+
 class License(Enum):
     PRIVATE = "Copyright WAVES [Private]"
     PUBLIC = "MIT"

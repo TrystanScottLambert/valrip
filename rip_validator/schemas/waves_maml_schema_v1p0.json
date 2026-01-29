@@ -120,7 +120,6 @@
     },
     "MAML_version": {
       "type": "number",
-      "const": 1.1,
       "description": "Required version of the MAML schema"
     },
     "fields": {

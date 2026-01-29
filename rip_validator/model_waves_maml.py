@@ -12,12 +12,12 @@
 from __future__ import annotations
 
 from datetime import date as date_aliased
-from typing import List, Literal, Optional, Union
+from typing import List, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 from email_validator import EmailNotValidError, validate_email
-from .data_types import SurveyName, License
+from .data_types import MAML_VERSION, SurveyName, License
 
 import re
 
@@ -38,7 +38,7 @@ _EMAIL_RE = re.compile(r"^(?P<name>.+?)\s*<(?P<email>[^>]+)>$")
 def _validate_name_email(value: str) -> str:
     match = _EMAIL_RE.match(value)
     if not match:
-        raise ValueError("Must be in the format 'Full Name <email@example.com>'")
+        raise ValueError("Must be in the format 'Full Name <email@example.com>'.")
 
     email = match.group("email")
     _is_valid_email(email)
@@ -47,11 +47,13 @@ def _validate_name_email(value: str) -> str:
 
 
 class DOIEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     DOI: str = Field(..., description="Valid DOI")
     type: str = Field(..., description="Type of DOI")
 
 
 class DependEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     survey: str = Field(..., description="The name of the dependent survey.")
     dataset: str = Field(..., description="The name of the dependent dataset.")
     table: str = Field(..., description="The name of the dependent table.")
@@ -61,11 +63,13 @@ class DependEntry(BaseModel):
 
 
 class QCEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     min: float = Field(..., description="Required data minimum value")
     max: float = Field(..., description="Required data maximum value")
 
 
 class FieldEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str = Field(..., description="Required field name")
     unit: str = Field(..., description="Required unit of measurement")
     info: str = Field(..., description="Required short description")
@@ -98,19 +102,30 @@ class WavesMamlSchema(BaseModel):
     comments: Optional[List[str]] = None
     license: Optional[License] = None
     keywords: Optional[List[str]] = None
-    MAML_version: float = Field(1.1, description="Required version of the MAML schema")
+    MAML_version: float
     fields: List[FieldEntry]
 
     # ---- validators ----
 
     @field_validator("author")
     @classmethod
-    def validate_author(cls, v: str) -> str:
-        return _validate_name_email(v)
+    def validate_author(cls, value: str) -> str:
+        return _validate_name_email(value)
 
     @field_validator("coauthors", mode="before")
     @classmethod
-    def validate_coauthors(cls, v):
-        if v is None:
-            return v
-        return [_validate_name_email(author) for author in v]
+    def validate_coauthors(cls, value: list[str]):
+        if value is None:
+            return value
+        if not isinstance(value, list):
+            raise ValueError(f"Invalid coauthor '{value}'.")
+        return [_validate_name_email(author) for author in value]
+
+    @field_validator("MAML_version", mode="before")
+    @classmethod
+    def validate_MAML_version(cls, value: float):
+        if value != MAML_VERSION:
+            raise ValueError(f"Invalid MAML_version, value should be: {MAML_VERSION}.")
+        return value
+    
+    
