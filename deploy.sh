@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # Clone repositories
 git clone git@dev.aao.org.au:waves/twg6/rip-validator.git
 git clone git@github.com:TrystanScottLambert/valrip.git
@@ -17,12 +16,20 @@ LATEST_TAG=$(git tag | sort -V | tail -n 1) # e.g., v0.0.6
 IFS='.' read -r MAJOR MINOR PATCH <<<"${LATEST_TAG#v}"
 PATCH=$((PATCH + 1))
 NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}" # Version without 'v' prefix
 
 # Update README.md to use the new release tag
 if sed --version >/dev/null 2>&1; then
   sed -E -i.bak "s#(releases/download/)v[0-9]+\.[0-9]+\.[0-9]+#\1$NEW_TAG#g" README.md
 else
   sed -E -i '' "s#(releases/download/)v[0-9]+\.[0-9]+\.[0-9]+#\1$NEW_TAG#g" README.md
+fi
+
+# Update pyproject.toml version field
+if sed --version >/dev/null 2>&1; then
+  sed -i.bak "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+else
+  sed -i '' "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
 fi
 
 # Commit changes
@@ -33,6 +40,7 @@ git push
 # Create and push new tag
 git tag $NEW_TAG
 git push origin $NEW_TAG
+
 cd ..
 rm -rf rip-validator/
 rm -rf valrip/

@@ -2,7 +2,7 @@
 name = "rip_validator"
 authors = [{name = "Trystan Lambert", email = "trystan.lambert@uwa.edu.au"}, 
            {name = "Dior Etherton", email = "dior.etherton@uwa.edu.au"}]
-version = "1.0"
+version = "0.0.9"
 description = "A validator for a WAVES submitted RIP. Tests for adherence to WAVES standards, the WAVES-MAML schema, and consistency between the data and the metadata."
 requires-python = ">=3.12"
 dependencies = [
