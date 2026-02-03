@@ -1,4 +1,14 @@
 #!/bin/bash
+
+# Check for version bump argument
+BUMP_TYPE=${1:-patch}  # Default to patch if no argument provided
+
+if [[ ! "$BUMP_TYPE" =~ ^(major|minor|patch)$ ]]; then
+  echo "Error: Invalid bump type. Use 'major', 'minor', or 'patch'"
+  echo "Usage: $0 [major|minor|patch]"
+  exit 1
+fi
+
 # Clone repositories
 git clone git@dev.aao.org.au:waves/twg6/rip-validator.git
 git clone git@github.com:TrystanScottLambert/valrip.git
@@ -11,10 +21,26 @@ cp rip-validator/valrip.spec valrip/
 
 cd valrip
 
-# Auto-increment patch version
+# Get latest tag and parse version
 LATEST_TAG=$(git tag | sort -V | tail -n 1) # e.g., v0.0.6
 IFS='.' read -r MAJOR MINOR PATCH <<<"${LATEST_TAG#v}"
-PATCH=$((PATCH + 1))
+
+# Bump version based on type
+case $BUMP_TYPE in
+  major)
+    MAJOR=$((MAJOR + 1))
+    MINOR=0
+    PATCH=0
+    ;;
+  minor)
+    MINOR=$((MINOR + 1))
+    PATCH=0
+    ;;
+  patch)
+    PATCH=$((PATCH + 1))
+    ;;
+esac
+
 NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
 NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}" # Version without 'v' prefix
 
@@ -34,7 +60,7 @@ fi
 
 # Commit changes
 git add .
-git commit -m "Deploying"
+git commit -m "Deploying $NEW_TAG"
 git push
 
 # Create and push new tag
@@ -45,4 +71,4 @@ cd ..
 rm -rf rip-validator/
 rm -rf valrip/
 
-echo "Deployed with new tag: $NEW_TAG"
+echo "Deployed with new tag: $NEW_TAG (bumped $BUMP_TYPE version)"
