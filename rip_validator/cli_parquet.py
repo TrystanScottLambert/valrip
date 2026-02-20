@@ -6,6 +6,8 @@ Separating into a separate file to limit import costs at runtime.
 from dataclasses import dataclass
 import polars as pl
 
+from rip_validator.status import State
+
 from .data_validator import validate_table
 from .helper_validator_methods import print_header
 
@@ -14,7 +16,7 @@ from .column_name_validator import validate_column_name
 
 @dataclass
 class DataValidationReport:
-    valid_data: bool
+    valid_data: State
     valid_column_names: bool
 
 

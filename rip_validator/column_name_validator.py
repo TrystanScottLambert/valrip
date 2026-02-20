@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from thefuzz import fuzz
 
 from .filter_check import check_filter
-from .status import Status, State
+from .status import Status, State, output_state
 from .data_types import ANSI
 from .config import (
     MAX_COLUMN_LENGTH,
@@ -21,7 +21,6 @@ NOT_ALLOWED = [
     "fred",
     "bob",
     "thing",
-    "something",
     "whatever",
     "words",
     "blahblahblah",
@@ -43,7 +42,7 @@ def check_length(name: str) -> Status:
     return Status(State.WARNING)
 
 
-def check_decimals(name: str) -> Status:
+def check_no_decimals(name: str) -> Status:
     if "." not in name:
         return Status(State.PASS)
     return Status(State.FAIL)
@@ -53,18 +52,26 @@ def check_allowed(name: str) -> Status:
     """
     Checks that the list of not allowed words isn't being used.
     """
-    for na in NOT_ALLOWED:
-        if na in name:
-            return Status(State.FAIL, na)
+    fail_ratio = 85
+    warning_ratio = 80
+    # If the word is >85% similar then it fails. If it's less than 85 but greater than 80 it's a warning.
+    for banned_word in NOT_ALLOWED:
+        if banned_word in name:
+            return Status(State.FAIL, banned_word)
     # fuzzy searching:
-    for na in NOT_ALLOWED:
+    for banned_word in NOT_ALLOWED:
         for word in name.split("_"):
-            ratio = fuzz.ratio(na, word.lower())
-            if ratio > 80:
-                return Status(State.FAIL, f"{name} contains banned word: {na}")
-            if ratio > 60:
-                return Status(State.WARNING, f"{name} contains possible banned word: {na}")
-    
+            ratio = fuzz.ratio(
+                banned_word, word.lower()
+            )  # This is how similar the word is to the banned word in percentage.
+            if ratio > fail_ratio:
+                return Status(State.FAIL, f"{name} contains banned word: {banned_word}")
+            if ratio > warning_ratio:
+                return Status(
+                    State.WARNING,
+                    f"{name} contains possible banned word: {banned_word}",
+                )
+
     return Status(State.PASS)
 
 
@@ -132,7 +139,7 @@ def check_snake_case(name: str) -> Status:
     if actual_string == "":
         return Status(State.PASS)
     if actual_string.islower():
-        if not check_alphanumeric(actual_string):
+        if check_alphanumeric(actual_string).state == State.FAIL:
             return Status(State.FAIL)
         return Status(State.PASS)
     return Status(State.FAIL)
@@ -156,118 +163,141 @@ class ColumnNameReport:
     not_protected: Status
 
     def __post_init__(self) -> None:
-        self.valid: bool = all(
+        self.valid = State.PASS
+        if any(
             [
-                self.alpha_numeric.state == State.PASS,
-                self.starts_with_letter.state == State.PASS,
-                self.snake_case.state == State.PASS,
-                self.length.state == State.PASS,
-                self.no_decimals.state == State.PASS,
-                self.filter_name.state == State.PASS,
-                self.allowed_words.state == State.PASS,
-                self.no_exception_violation.state == State.PASS,
-                self.not_protected.state == State.PASS,
+                self.alpha_numeric.state == State.WARNING,
+                self.starts_with_letter.state == State.WARNING,
+                self.snake_case.state == State.WARNING,
+                self.length.state == State.WARNING,
+                self.no_decimals.state == State.WARNING,
+                self.filter_name.state == State.WARNING,
+                self.allowed_words.state == State.WARNING,
+                self.no_exception_violation.state == State.WARNING,
+                self.not_protected.state == State.WARNING,
             ]
-        )
+        ):
+            self.valid = State.WARNING
+        elif any(
+            [
+                self.alpha_numeric.state == State.FAIL,
+                self.starts_with_letter.state == State.FAIL,
+                self.snake_case.state == State.FAIL,
+                self.length.state == State.FAIL,
+                self.no_decimals.state == State.FAIL,
+                self.filter_name.state == State.FAIL,
+                self.allowed_words.state == State.FAIL,
+                self.no_exception_violation.state == State.FAIL,
+                self.not_protected.state == State.FAIL,
+            ]
+        ):
+            self.valid = State.FAIL
 
     def print_report(self, verbose=False):
         """
         Print a professional validation report with color-coded results.
         """
-        # Helper function for status
-        def status(given_status: Status) -> str:
-            match given_status.state:
-                case State.PASS:
-                    return f"{ANSI.GREEN}✓ PASS{ANSI.RESET}"
-                case State.FAIL:
-                    return f"{ANSI.RED}✗ FAIL{ANSI.RESET}"
-                case State.WARNING:
-                    return f"{ANSI.YELLOW}⚠ WARNING"
-
         # Overall column status
         overall_color = ANSI.GREEN if self.valid else ANSI.RED
-        overall_status = "VALID" if self.valid else "INVALID"
-        print(f"\n{ANSI.BOLD}Column:{ANSI.RESET} {self.column_name} | {ANSI.BOLD}Overall Status:{ANSI.RESET} {overall_color}{overall_status}{ANSI.RESET}")
+        print(
+            f"\n{ANSI.BOLD}Column:{ANSI.RESET} {self.column_name} | {ANSI.BOLD}Overall Status:{ANSI.RESET} {overall_color}{output_state(self.valid)}{ANSI.RESET}"
+        )
 
-        if not self.valid or verbose:
-          print(f"\n{ANSI.BOLD}Validation Checks:{ANSI.RESET}")
-          print(f"{'-' * 80}")
+        if self.valid != State.PASS or verbose:
+            print(f"\n{ANSI.BOLD}Validation Checks:{ANSI.RESET}")
+            print(f"{'-' * 80}")
 
-          if self.alpha_numeric.state == State.FAIL or verbose:
-              print(
-                  f"  Alphanumeric (letters, numbers, underscores): {status(self.alpha_numeric)}"
-              )
+            if self.alpha_numeric.state != State.PASS or verbose:
+                print(
+                    f"  Alphanumeric (letters, numbers, underscores): {self.alpha_numeric.output()}"
+                )
 
-          if self.starts_with_letter.state == State.FAIL or verbose:
-              print(
-                  f"  Starts with letter:                           {status(self.starts_with_letter)}"
-              )
+            if self.starts_with_letter.state != State.PASS or verbose:
+                print(
+                    f"  Starts with letter:                           {self.starts_with_letter.output()}"
+                )
 
-          if self.snake_case.state == State.FAIL or verbose:
-              print(
-                  f"  Snake case format:                            {status(self.snake_case)}"
-              )
+            if self.snake_case.state != State.PASS or verbose:
+                print(
+                    f"  Snake case format:                            {self.snake_case.output()}"
+                )
 
-          length_status = status(self.length)
-          length_info = ""
-          if self.length.state == State.WARNING:
-              length_info = f"\n    {ANSI.YELLOW} → Length is valid but long ({len(self.column_name)}/{MAX_COLUMN_LENGTH}).{ANSI.RESET}"
-          elif self.length.state == State.FAIL:
-              length_info = f"\n     {ANSI.RED} → Column name is too long ({len(self.column_name)}/{MAX_COLUMN_LENGTH}).{ANSI.RESET}"
-          
-          if self.length.state!= State.PASS or verbose:
-              print(
-                  f"  Length < {MAX_COLUMN_LENGTH} characters:                       {length_status}{length_info}"
-              )
+            length_status = self.length.output()
+            length_info = ""
+            if self.length.state == State.WARNING:
+                length_info = f"\n    {ANSI.YELLOW} → Length is valid but long ({len(self.column_name)}/{MAX_COLUMN_LENGTH}).{ANSI.RESET}"
+            elif self.length.state == State.FAIL:
+                length_info = f"\n     {ANSI.RED} → Column name is too long ({len(self.column_name)}/{MAX_COLUMN_LENGTH}).{ANSI.RESET}"
 
-          if self.no_decimals.state == State.FAIL or verbose:
-              print(
-                  f"  No decimal points:                            {status(self.no_decimals)}"
-              )
+            if self.length.state != State.PASS or verbose:
+                print(
+                    f"  Length < {MAX_COLUMN_LENGTH} characters:                       {length_status}{length_info}"
+                )
 
-          filter_status = status(self.filter_name)
-          filter_info = ""
-          if self.filter_name.state == State.WARNING:
-              filter_info = f"\n    {ANSI.YELLOW} → Possible filter name violation: did you mean '{self.filter_name.message}'?{ANSI.RESET}"
-          elif self.filter_name.state == State.FAIL:
-              filter_info = f"\n    {ANSI.RED} → Required: Use '{self.filter_name.message}'{ANSI.RESET}" if self.filter_name.state == State.FAIL else ""
-          
-          if self.filter_name.state != State.PASS or verbose:
-              print(
-                  f"  Valid filter name usage:                      {filter_status}{filter_info}"
-              )
-          
-          exception_status = status(self.no_exception_violation)
-          exception_info = f"\n    {ANSI.RED} → Required: Use correct case '{self.no_exception_violation.message}'{ANSI.RESET}" if self.no_exception_violation.state != State.PASS else ""
-          if self.no_exception_violation.state != State.PASS or verbose:
-              print(
-                  f"  Exception words in correct case:              {exception_status}{exception_info}"
-              )
+            if self.no_decimals.state != State.PASS or verbose:
+                print(
+                    f"  No decimal points:                            {self.no_decimals.output()}"
+                )
 
-          protected_status = status(self.not_protected)
-          protected_info = ""
-          if self.not_protected.state == State.WARNING:
-              protected_info = f"\n    {ANSI.YELLOW} → Protected word in use: Use correct form. Maybe '{self.not_protected.message}'?{ANSI.RESET}"
-          elif self.not_protected.state == State.FAIL:
-              protected_info = f"\n    {ANSI.RED} → Protected word in use: Use correct case: '{self.not_protected.message}'{ANSI.RESET}"
-              
-          if self.not_protected.state == State.WARNING or self.not_protected.state == State.FAIL or verbose:
-              print(
-                  f"  Not violating protected standards:            {protected_status}{protected_info}"
-              )
-          
-          allowed_status = status(self.allowed_words)
-          allowed_info = ""
-          if self.allowed_words.state == State.WARNING:
-              allowed_info = f"\n    {ANSI.YELLOW} → {self.allowed_words.message}{ANSI.RESET}"
-          elif self.allowed_words.state == State.FAIL:
-              allowed_info = f"\n    {ANSI.RED} → {self.allowed_words.message}{ANSI.RESET}"
-          if self.allowed_words.state != State.PASS or verbose:
-              print(
-                  f"  No banned words:                              {allowed_status}{allowed_info}"
-              )
+            filter_status = self.filter_name.output()
+            filter_info = ""
+            if self.filter_name.state == State.WARNING:
+                filter_info = f"\n    {ANSI.YELLOW} → Possible filter name violation: did you mean '{self.filter_name.message}'?{ANSI.RESET}"
+            elif self.filter_name.state != State.PASS:
+                filter_info = (
+                    f"\n    {ANSI.RED} → Required: Use '{self.filter_name.message}'{ANSI.RESET}"
+                    if self.filter_name.state != State.PASS
+                    else ""
+                )
 
-          print(f"{'-' * 80}")
+            if self.filter_name.state != State.PASS or verbose:
+                print(
+                    f"  Valid filter name usage:                      {filter_status}{filter_info}"
+                )
+
+            exception_status = self.no_exception_violation.output()
+            exception_info = (
+                f"\n    {ANSI.RED} → Required: Use correct case '{self.no_exception_violation.message}'{ANSI.RESET}"
+                if self.no_exception_violation.state != State.PASS
+                else ""
+            )
+            if self.no_exception_violation.state != State.PASS or verbose:
+                print(
+                    f"  Exception words in correct case:              {exception_status}{exception_info}"
+                )
+
+            protected_status = self.not_protected.output()
+            protected_info = ""
+            if self.not_protected.state == State.WARNING:
+                protected_info = f"\n    {ANSI.YELLOW} → Protected word in use: Use correct form. Maybe '{self.not_protected.message}'?{ANSI.RESET}"
+            elif self.not_protected.state != State.PASS:
+                protected_info = f"\n    {ANSI.RED} → Protected word in use: Use correct case: '{self.not_protected.message}'{ANSI.RESET}"
+
+            if (
+                self.not_protected.state == State.WARNING
+                or self.not_protected.state != State.PASS
+                or verbose
+            ):
+                print(
+                    f"  Not violating protected standards:            {protected_status}{protected_info}"
+                )
+
+            allowed_status = self.allowed_words.output()
+            allowed_info = ""
+            if self.allowed_words.state == State.WARNING:
+                allowed_info = (
+                    f"\n    {ANSI.YELLOW} → {self.allowed_words.message}{ANSI.RESET}"
+                )
+            elif self.allowed_words.state != State.PASS:
+                allowed_info = (
+                    f"\n    {ANSI.RED} → {self.allowed_words.message}{ANSI.RESET}"
+                )
+            if self.allowed_words.state != State.PASS or verbose:
+                print(
+                    f"  No banned words:                              {allowed_status}{allowed_info}"
+                )
+
+            print(f"{'-' * 80}")
 
 
 def validate_column_name(name: str) -> ColumnNameReport:
@@ -278,7 +308,7 @@ def validate_column_name(name: str) -> ColumnNameReport:
     letter_start = check_alphabetical_start(name)
     valid_length = check_length(name)
     snake_case = check_snake_case(name)
-    no_decimals = check_decimals(name)
+    no_decimals = check_no_decimals(name)
     valid_filter = check_filter(name)
     allowed = check_allowed(name)
     violates_exception = check_exceptions(name)

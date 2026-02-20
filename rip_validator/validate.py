@@ -3,23 +3,30 @@ Module which combines the reports from the various validations
 """
 
 import click
+from .version_control import Version
+
+version = Version()
 
 
 @click.group()
+@click.version_option(version=version.version_call(), package_name="valrip")
 def cli():
+    version.check_version()
     pass
 
 
 @click.command(name="parquet")
 @click.argument("file_name")
 @click.option(
-    "--quiet", "-q",
+    "--quiet",
+    "-q",
     default=False,
     is_flag=True,
     help="Boolean flag that indicates whether to run in quiet mode, or not.",
 )
 @click.option(
-    "--verbose", "-v",
+    "--verbose",
+    "-v",
     default=False,
     is_flag=True,
     help="Boolean flag that indicates whether to print all output even when it might not be useful, or not.",
@@ -36,13 +43,15 @@ def validate_parquet(file_name: str, quiet=False, verbose=False):
 @click.command(name="maml")
 @click.argument("file_name")
 @click.option(
-    "--quiet", "-q",
+    "--quiet",
+    "-q",
     default=False,
     is_flag=True,
     help="Boolean flag that indicates whether to run in quiet mode, or not.",
 )
 @click.option(
-    "--verbose", "-v",
+    "--verbose",
+    "-v",
     default=False,
     is_flag=True,
     help="Boolean flag that indicates whether to print all output even when it might not be useful, or not.",
@@ -59,13 +68,15 @@ def validate_maml(file_name: str, quiet=False, verbose=False):
 @click.command(name="both")
 @click.argument("file_name")
 @click.option(
-    "--quiet", "-q",
+    "--quiet",
+    "-q",
     default=False,
     is_flag=True,
     help="Boolean flag that indicates whether to run in quiet mode, or not.",
 )
 @click.option(
-    "--verbose", "-v",
+    "--verbose",
+    "-v",
     default=False,
     is_flag=True,
     help="Boolean flag that indicates whether to print all output even when it might not be useful, or not.",

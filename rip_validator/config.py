@@ -11,13 +11,7 @@ WARN_COLUMN_LENGTH = 30
 _PROTECTED_WORD_FILE = f"{resources_dir}/protected_words.yaml"
 _FILTER_NAME_FILE = f"{resources_dir}/filters.yaml"
 _EXCEPTION_FILE = f"{resources_dir}/exceptions.yaml"
-
-
-@dataclass
-class ExceptionWord:
-    name: str
-    ucd: str
-    unit: str
+_UCD_RULE_FILE = f"{resources_dir}/ucd_rules.yaml"
 
 
 @dataclass
@@ -37,15 +31,29 @@ class FilterName:
         self.inverse_name = "_".join(self.name.split("_")[::-1])
 
 
+@dataclass
+class ExceptionWord:
+    name: str
+    ucd: str
+    unit: str
 
-with open(_EXCEPTION_FILE, encoding="utf8") as file:
-    exceptions_dict = yaml.safe_load(file)
+
+@dataclass
+class UCDRules:
+    namespaces: list[str]
+
 
 with open(_PROTECTED_WORD_FILE, encoding="utf8") as file:
     protected_word_dict = yaml.safe_load(file)
 
 with open(_FILTER_NAME_FILE, encoding="utf8") as file:
     filter_word_dict = yaml.safe_load(file)
+
+with open(_EXCEPTION_FILE, encoding="utf8") as file:
+    exceptions_dict = yaml.safe_load(file)
+
+with open(_UCD_RULE_FILE, encoding="utf8") as file:
+    ucd_rules_dict = yaml.safe_load(file)
 
 protected_words = [
     ProtectedWord(name, entry["common_mistakes"], entry["ucd"], entry["unit"])
@@ -60,3 +68,5 @@ exceptions = [
     ExceptionWord(name, entry["ucd"], entry["unit"])
     for name, entry in exceptions_dict.items()
 ]
+
+ucd_rules = UCDRules(ucd_rules_dict["namespaces"])

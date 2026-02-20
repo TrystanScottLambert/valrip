@@ -4,7 +4,7 @@
 #   1. Run datamodel-codegen --input rip_validator/schemas/daml_schema_v1p0.json --input-file-type jsonschema --output rip_validator/model_daml.py.
 #   2. Rename the classes to end with "Entry" for consistency with model_waves_maml.
 #   3. Replace Survey and License string types with the relevant enums from .data_types
-#   4. Remove the pydantic.Extra import, import pydantic.ConfigDict, and replace the 
+#   4. Remove the pydantic.Extra import, import pydantic.ConfigDict, and replace the
 #      "class Config: extra = Extra.forbid" with "model_config = ConfigDict(extra="forbid")""
 
 from __future__ import annotations
@@ -18,42 +18,44 @@ from .data_types import SurveyName, License
 
 
 class DOIEntry(BaseModel):
-    DOI: str = Field(..., description='Valid DOI')
-    type: str = Field(..., description='Type of DOI')
+    DOI: str = Field(..., description="Valid DOI")
+    type: str = Field(..., description="Type of DOI")
 
 
 class TableEntry(BaseModel):
-    name: str = Field(..., description='Required field name')
+    name: str = Field(..., description="Required field name")
     version: Union[str, float] = Field(
-        ..., description='Required version (string, integer, or float)'
+        ..., description="Required version (string, integer, or float)"
     )
 
 
 class DamlSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    survey: SurveyName = Field(..., description='Required survey name')
-    dataset: str = Field(..., description='Required dataset name')
+    survey: SurveyName = Field(..., description="Required survey name")
+    dataset: str = Field(..., description="Required dataset name")
     version: Union[str, float] = Field(
-        ..., description='Required version (string, integer, or float)'
+        ..., description="Required version (string, integer, or float)"
     )
     date: date_aliased = Field(
         ...,
-        description='Required date in YYYY-MM-DD format (ISO-8601), must be enclosed in quotes',
+        description="Required date in YYYY-MM-DD format (ISO-8601), must be enclosed in quotes",
     )
-    author: str = Field(..., description='Required lead author name and <email>')
+    author: str = Field(..., description="Required lead author name and <email>")
     coauthors: Optional[List[str]] = Field(
-        None, description='Optional list of coauthor names and <emails>'
+        None, description="Optional list of coauthor names and <emails>"
     )
     DOIs: Optional[List[DOIEntry]] = Field(
-        None, description='Optional list of DOIs relevant to this table'
+        None, description="Optional list of DOIs relevant to this table"
     )
     description: str = Field(
-        ..., description='Required short description of the dataset'
+        ..., description="Required short description of the dataset"
     )
     comments: Optional[List[str]] = Field(
-        None, description='Optional list of comments or interesting facts'
+        None, description="Optional list of comments or interesting facts"
     )
-    license: Optional[License] = Field(None, description='Optional license for the data')
-    keywords: Optional[List[str]] = Field(None, description='Optional list of keywords')
+    license: Optional[License] = Field(
+        None, description="Optional license for the data"
+    )
+    keywords: Optional[List[str]] = Field(None, description="Optional list of keywords")
     tables: List[TableEntry]

@@ -3,30 +3,25 @@ Module for handling the WAVES-specific flavor of MAML
 Helper functions for building the metadata for the datasets.
 """
 
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 import polars as pl
 import httpx
 import json
 import yaml
-from email_validator import EmailNotValidError, validate_email
 from pydantic_core import ValidationError
 
-from .helper_validator_methods import print_header, WHITESPACE_PADDING_LENGTH
+from .helper_validator_methods import (
+    format_waves_error_message,
+    print_header,
+    WHITESPACE_PADDING_LENGTH,
+)
 from .model_waves_maml import WavesMamlSchema
-from .data_types import SurveyName, License, ANSI
+from .data_types import SurveyName, License, ANSI, WAVESCustomExceptions
+from .yaml_errors import validate_yaml_file
 
 from .config import protected_words, filter_words, exceptions
-
-
-def _is_valid_email(email: str) -> None:
-    """
-    Raise ValueError if email is invalid (Pydantic-friendly).
-    """
-    try:
-        validate_email(email, check_deliverability=True)
-    except EmailNotValidError as e:
-        raise ValueError(f"Invalid email address '{email}': {e}.")
 
 
 @dataclass
@@ -34,12 +29,6 @@ class Author:
     name: str
     surname: str
     email: str
-
-    def __post_init__(self) -> None:
-        """
-        Validating email.
-        """
-        _is_valid_email(self.email)
 
     def __str__(self):
         return f"{self.name.capitalize()} {self.surname.capitalize()} <{self.email}>"
@@ -348,38 +337,27 @@ def _split_author_string(author: str) -> Author:
 
 def get_error_field_location(loc: tuple[int | str, ...]):
     """
-    Makes a human-readable string of the "loc" tuple provided by pydantic's error handling. 
+    Gets a consistently styled output from pydantics "loc" field.
+    See https://docs.pydantic.dev/latest/errors/errors/ for more details.
 
-    See https://docs.pydantic.dev/latest/errors/errors/ for more details. 
-    
-    :param loc: The "loc" entry of the pydantic ValidationError error object. 
+    :param loc: The "loc" entry of the pydantic ValidationError error object.
     :type loc: tuple[int | str, ...]
     """
-    loc_string = ""
-    for l in loc:
-        # For some reason, pydantic refers to 'float' in the location of float elements. 
-        # It doesn't list the type in other types (string, objects, etc.), so we have 
-        # introduced this work around where we don't add the 'float' term to the error location. 
-        if isinstance(l, str) and l != 'float':
-          loc_string += f" > {l}"
-        elif isinstance(l, int):
-            loc_string += f" > element {l}"
-        
-    return loc_string
+    return f"> {loc[0]}"
 
 
 def print_correct_fields(verbose: bool, fields: list[str]):
-  if verbose:
-    # Print the correct fields. 
-    for field in fields:
-        field_loc = f" > {field}"
-        print(
-            f"\n{ANSI.BOLD}{field_loc.ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RESET}{ANSI.GREEN}✓ PASS{ANSI.RESET}"
-        )
+    if verbose:
+        # Print the correct fields.
+        for field in fields:
+            field_loc = f"> {field}"
+            print(
+                f"\n{ANSI.BOLD}{field_loc.ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RESET}{ANSI.GREEN}✓ PASS{ANSI.RESET}"
+            )
 
 
-# This Loader is used to override pyyamls (overly eager) interpretation of some strings as dates. 
-# See https://stackoverflow.com/a/37958106 for more details. 
+# This Loader is used to override pyyamls (overly eager) interpretation of some strings as dates.
+# See https://stackoverflow.com/a/37958106 for more details.
 class NoDatesSafeLoader(yaml.SafeLoader):
     @classmethod
     def remove_implicit_resolver(cls, tag_to_remove):
@@ -392,13 +370,29 @@ class NoDatesSafeLoader(yaml.SafeLoader):
         go on to serialise as json which doesn't have the advanced types
         of yaml, and leads to incompatibilities down the track.
         """
-        if not 'yaml_implicit_resolvers' in cls.__dict__:
+        if "yaml_implicit_resolvers" not in cls.__dict__:
             cls.yaml_implicit_resolvers = cls.yaml_implicit_resolvers.copy()
 
         for first_letter, mappings in cls.yaml_implicit_resolvers.items():
-            cls.yaml_implicit_resolvers[first_letter] = [(tag, regexp) 
-                                                         for tag, regexp in mappings
-                                                         if tag != tag_to_remove]
+            cls.yaml_implicit_resolvers[first_letter] = [
+                (tag, regexp) for tag, regexp in mappings if tag != tag_to_remove
+            ]
+
+
+def _capture_unknown_error(file_path: str, error_message: Exception) -> None:
+    """
+    Reads in the corrrupted file and combines the error message and file contents into error.log
+    """
+    with open(file_path, encoding="utf-8") as file:
+        corrupted_contents = file.readlines()
+    error_string = f"{error_message}"
+    with open("error.log", "w", encoding="utf-8") as file:
+        file.write("-----CONTENTS_START------\n")
+        file.writelines(corrupted_contents)
+        file.write("-----CONTENTS_END------\n")
+        file.write("-----ERROR_STARTS------\n")
+        file.write(error_string)
+        file.write("\n-----ERROR_ENDS------\n")
 
 
 def read_and_validate_maml(
@@ -411,10 +405,31 @@ def read_and_validate_maml(
     if not quiet:
         print_header("MAML Validation Report")
         print(f"\n{ANSI.BOLD}File Name:{ANSI.RESET} {maml_file}")
+
+    # Check for any known invalid yaml "gotchas"
+    valid_yaml = validate_yaml_file(maml_file)
+    if not valid_yaml:
+        sys.exit()
+
     with open(maml_file) as file:
-        # See https://yaml.org/type/timestamp.html for the URI to remove. 
-        NoDatesSafeLoader.remove_implicit_resolver('tag:yaml.org,2002:timestamp')
-        maml_dict = yaml.load(file, Loader=NoDatesSafeLoader)
+        # See https://yaml.org/type/timestamp.html for the URI to remove.
+        NoDatesSafeLoader.remove_implicit_resolver("tag:yaml.org,2002:timestamp")
+        try:
+            maml_dict = yaml.load(file, Loader=NoDatesSafeLoader)
+        except Exception as e:
+            _capture_unknown_error(maml_file, e)
+            message = (
+                f"{ANSI.RED}MAML file appears to not be valid YAML with an error that the team has not yet implemented validation for."
+                f" Please ensure that file is valid YAML before continuing."
+                f" An error log has been created called {ANSI.RESET}{ANSI.GREEN}'error.log'{ANSI.RESET}{ANSI.RED}."
+                f" Please report the error by sharing the 'error.log' file in"
+                f" a new issue the WAVES GitLab: {ANSI.RESET}{ANSI.YELLOW}(https://dev.aao.org.au/waves/twg6/rip-validator/-/issues){ANSI.RESET}"
+            )
+            print(message)
+            print("\n")
+            print(f"Error: {e}")
+            sys.exit()
+
     try:
         WavesMamlSchema.model_validate(maml_dict)
         if not quiet:
@@ -434,29 +449,38 @@ def read_and_validate_maml(
                 field = exception["loc"][0]
                 field_exceptions = [ex for ex in e.errors() if ex["loc"][0] == field]
                 error_fields[field] = field_exceptions
-            
+
             print_correct_fields(verbose, maml_dict.keys() - error_fields.keys())
 
-            # Print the incorrect/missing fields. 
+            # Print the incorrect/missing fields.
             for field in error_fields.keys():
                 for exception in error_fields[field]:
-                  if exception["type"] == "missing":
-                      print(
-                      f"\n{ANSI.BOLD}{get_error_field_location(exception["loc"]).ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RED}✗ FAIL{ANSI.RESET}"
-                      )
-                      print(
-                          f"\n   {ANSI.RED} → Missing element. {exception['msg']}{ANSI.RESET}"
-                      )
-                  else:
-                      print(
-                          f"\n{ANSI.BOLD}{get_error_field_location(exception["loc"]).ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RED}✗ FAIL{ANSI.RESET}"
-                      )
-                      print(
-                          f"\n   {ANSI.RED} → Incorrect element: {exception['input']}. {exception['msg']}{ANSI.RESET}"
-                      )
+                    if (
+                        exception["type"] == "missing"
+                        or exception["type"] == WAVESCustomExceptions.MISSING_EXCEPTION
+                    ):
+                        print(
+                            f"\n{ANSI.BOLD}{get_error_field_location(exception['loc']).ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RED}✗ FAIL{ANSI.RESET}"
+                        )
+                        print(
+                            f"{ANSI.RED}→ Missing element. {exception['msg']}{ANSI.RESET}"
+                        )
+                    elif exception["type"] != WAVESCustomExceptions.LIST_EXCEPTION:
+                        location = f"{get_error_field_location(exception['loc'])}"
+                        if exception["input"]:
+                            location += f" ({exception['input']})"
+                        print(
+                            f"\n{ANSI.BOLD}{location.ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RED}✗ FAIL{ANSI.RESET}"
+                        )
+                        print(format_waves_error_message("", exception["msg"]))
+                    else:
+                        print(
+                            f"\n{ANSI.BOLD}{get_error_field_location(exception['loc']).ljust(WHITESPACE_PADDING_LENGTH)}{ANSI.RED}✗ FAIL{ANSI.RESET}"
+                        )
+                        print(f"{exception['msg']}")
         return None
 
-    # Print the correct fields. 
+    # Print the correct fields.
     if not quiet:
         print_correct_fields(verbose, maml_dict.keys())
 

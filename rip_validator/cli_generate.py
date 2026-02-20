@@ -3,6 +3,7 @@ Python script to generate a yaml meta data file from a parquet file.
 """
 
 import datetime
+from itertools import permutations
 import os
 from dataclasses import dataclass
 from typing import List
@@ -15,6 +16,7 @@ from pymaml.maml import MAMLBuilder
 
 from .config import protected_words, filter_words, exceptions
 from .metadata_validator import MinMax
+from rip_validator.ucd_validator import validate_ucd
 
 
 @dataclass
@@ -117,9 +119,28 @@ def _scrape_ucd(column_name: str) -> str:
     full_ucds = list(dict.fromkeys(";".join(current_ucds).split(";")))
 
     combined = ";".join(full_ucds)
-    if ";" not in combined and is_filter:
+    if ";" not in combined and is_filter and "phot.mag" not in combined:
         combined = f"phot.mag;{combined}"
         is_filter = False
+
+    # Validate the ucd and permuate until we find a valid one. Else give up
+    try:
+        validate_ucd(combined)
+    except ValueError:
+        # Try all permutations to see if any are valid.
+        words = combined.split(";")
+        current_solution = ""
+        for i in range(len(words) - 1):
+            for permutation in permutations(words, i + 1):
+                try:
+                    permeated_combination = ";".join(permutation)
+                    validate_ucd(permeated_combination)
+                    if permeated_combination.count(";") > current_solution.count(";"):
+                        current_solution = permeated_combination
+                except ValueError:
+                    pass
+        return current_solution
+
     return combined
 
 
