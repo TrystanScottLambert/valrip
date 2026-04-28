@@ -2,17 +2,19 @@
 name = "rip_validator"
 authors = [{name = "Trystan Lambert", email = "trystan.lambert@uwa.edu.au"}, 
            {name = "Dior Etherton", email = "dior.etherton@uwa.edu.au"}]
-version = "1.0.1"
+version = "2.0.0"
 description = "A validator for a WAVES submitted RIP. Tests for adherence to WAVES standards, the WAVES-MAML schema, and consistency between the data and the metadata."
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.1",
     "email-validator==2.3.0",
     "httpx==0.28.1",
+    "maskpass==0.3.7",
     "polars>=1.36.1",
     "pyaml==25.7.0",
     "pydantic==2.12.5",
     "pymaml==0.6.3",
+    "pyocclient==0.6",
     "rich==14.2.0",
     "thefuzz==0.22.1",
     "yaml-to-markdown==0.1.1744598339",
@@ -21,6 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest==9.0",
+    "pytest-cov==7.0.0",
 ]
 
 [project.scripts]
@@ -29,3 +32,9 @@ valrip = "rip_validator.validate:cli"
 [build-system]
 requires = ["flit_core<4"]
 build-backend = "flit_core.buildapi"
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::DeprecationWarning:pymaml.*",
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20:pymaml.*",
+]

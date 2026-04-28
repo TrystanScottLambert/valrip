@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from thefuzz import fuzz
 from .status import Status, State
 
-from .config import filter_words
+from .settings_config import filter_words
 
 WARNING_TOLERANCE_RATIO = 70
 FAIL_TOLERANCE_RATIO = 80

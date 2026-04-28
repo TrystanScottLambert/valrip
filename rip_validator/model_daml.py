@@ -14,7 +14,7 @@ from typing import List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .data_types import SurveyName, License
+from .WAVES_config import SurveyName, License
 
 
 class DOIEntry(BaseModel):

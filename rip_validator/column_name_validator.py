@@ -8,8 +8,8 @@ from thefuzz import fuzz
 
 from .filter_check import check_filter
 from .status import Status, State, output_state
-from .data_types import ANSI
-from .config import (
+from .WAVES_config import ANSI
+from .settings_config import (
     MAX_COLUMN_LENGTH,
     WARN_COLUMN_LENGTH,
     protected_words,
@@ -300,7 +300,7 @@ class ColumnNameReport:
             print(f"{'-' * 80}")
 
 
-def validate_column_name(name: str) -> ColumnNameReport:
+def get_column_name_report(name: str) -> ColumnNameReport:
     """
     Checks that the column names are correct and returns a report
     """

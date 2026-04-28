@@ -3,39 +3,14 @@ Python script to generate a yaml meta data file from a parquet file.
 """
 
 import datetime
-from itertools import permutations
-import os
 from dataclasses import dataclass
-from typing import List
-
+from pathlib import Path
 import polars as pl
-import json
-import httpx
 
 from pymaml.maml import MAMLBuilder
 
-from .config import protected_words, filter_words, exceptions
-from .metadata_validator import MinMax
-from rip_validator.ucd_validator import validate_ucd
-
-
-@dataclass
-class ColumnMetaData:
-    name: str
-    ucd: str | None
-    data_type: str
-    qc: MinMax | None
-    unit: str = "--"
-    info: str = "--"
-
-    def _to_maml_dict(self) -> dict[str, str]:
-        """
-        Puts the column data into the format that can be passed to pymaml
-        """
-        qc = self.qc.__dict__ if self.qc else None
-        maml_dict = self.__dict__
-        maml_dict["qc"] = qc
-        return maml_dict
+from .WAVES_config import ANSI, ColumnMetaData
+from .metadata_generator import fields_from_lf
 
 
 @dataclass
@@ -45,11 +20,11 @@ class Skeleton:
     """
 
     table: str
-    fields: List["ColumnMetaData"]
+    fields: list[ColumnMetaData]
     date: str = str(datetime.datetime.today()).split(" ")[0]
     license: str = "Copyright WAVES [Private]"
 
-    def to_file(self, outfile: str) -> None:
+    def to_file(self, outfile: Path) -> None:
         builder = MAMLBuilder("v1.1")
         builder.set("dataset", "--")
         builder.set("date", self.date)
@@ -58,14 +33,14 @@ class Skeleton:
         builder.set("version", "--")
         builder.set("author", "--")
         for column in self.fields:
-            builder.add("fields", column._to_maml_dict())
+            builder.add("fields", column.to_maml_dict())
 
         maml = builder.build()
-        maml.to_file(outfile, include_none=True)
+        maml.to_file(str(outfile), include_none=True)
         _clean_file(outfile)
 
 
-def _clean_file(file_name: str) -> None:
+def _clean_file(file_name: Path) -> None:
     """
     Cleans the outputed maml file to produce a skeletal structure for WAVES specific MAML.
 
@@ -95,130 +70,44 @@ def _clean_file(file_name: str) -> None:
         file.writelines(good_lines)
 
 
-def _scrape_ucd(column_name: str) -> str:
-    """
-    Helper function will try to guess the ucd from the protected_words and filter configs.
-    """
-    is_filter = False
-    current_ucds = []
-    for exception in exceptions:
-        if exception.name in column_name:
-            current_ucds += [exception.ucd]
-    for protected_word in protected_words:
-        if "_" in protected_word.name:
-            if protected_word.name in column_name:
-                current_ucds += protected_word.ucd
-        else:
-            for word in column_name.split("_"):
-                if word == protected_word.name:
-                    current_ucds += protected_word.ucd
-    for filter_word in filter_words:
-        if filter_word.name in column_name:
-            current_ucds += [filter_word.secondary_ucd]
-            is_filter = True
-    full_ucds = list(dict.fromkeys(";".join(current_ucds).split(";")))
-
-    combined = ";".join(full_ucds)
-    if ";" not in combined and is_filter and "phot.mag" not in combined:
-        combined = f"phot.mag;{combined}"
-        is_filter = False
-
-    # Validate the ucd and permuate until we find a valid one. Else give up
-    try:
-        validate_ucd(combined)
-    except ValueError:
-        # Try all permutations to see if any are valid.
-        words = combined.split(";")
-        current_solution = ""
-        for i in range(len(words) - 1):
-            for permutation in permutations(words, i + 1):
-                try:
-                    permeated_combination = ";".join(permutation)
-                    validate_ucd(permeated_combination)
-                    if permeated_combination.count(";") > current_solution.count(";"):
-                        current_solution = permeated_combination
-                except ValueError:
-                    pass
-        return current_solution
-
-    return combined
+def _allowed_to_overwrite(file_name: Path) -> bool:
+    """Helper function to handle the looping logic for user input."""
+    responses = {
+        "y": True,
+        "yes": True,
+        "yeah": True,
+        "yup": True,
+        "n": False,
+        "no": False,
+        "nope": False,
+        "nah": False,
+    }
+    if file_name.is_file():
+        can_write = input(
+            f"File '{file_name}' already exists. Some fields might be lost. Do you wish to overwrite. (y/n): "
+        )
+        while can_write not in responses:
+            can_write = input(
+                "\nThat isn't a valid response. Please type 'y' for yes or 'n' for no: "
+            )
+        return responses[can_write]
+    else:  # If the file doesn't exist just write it.
+        return True
 
 
-def _scrape_cds_ucd(column_name: str) -> str | None:
-    """
-    Makes a request to https://cdsweb.u-strasbg.fr/UCD/ucd-finder/ and returns best guess at ucd.
-    """
-    sanitized_string = column_name.translate(str.maketrans("-_.", "   "))
-    re = httpx.get(
-        f"https://cdsweb.u-strasbg.fr/UCD/ucd-finder/suggest?d={sanitized_string}"
-    )
-    re_dict = json.loads(re.text)
-    try:
-        return re_dict["ucd"][0]["ucd"]
-    except IndexError:
-        return None
-
-
-def guess_ucd(column_name: str, web_search: bool = True) -> str | None:
-    """
-    Looks for a WAVES ucd if it exists or else scrapes the CDS website.
-    """
-    ucd = _scrape_ucd(column_name)
-    if ucd == "" and web_search:
-        ucd = _scrape_cds_ucd(column_name)
-    return ucd
-
-
-def fields_from_df(
-    data_frame: pl.DataFrame, web_search: bool = True
-) -> list[ColumnMetaData]:
-    """
-    Automatically generating as much field metadata as possible.
-
-    This function will attempt to guess the ucd strings using the
-    official WAVES lookup table. If the search cds is True
-    then any other column names will make requests to the cds website.
-    """
-    column_names = data_frame.columns
-    # We are lucky here that datacentral adopts the polars datatypes lower cased.
-    data_types = [str(dtype).lower() for dtype in list(data_frame.dtypes)]
-
-    mins = data_frame.min().row(0)
-    maxs = data_frame.max().row(0)
-    qcs = [
-        MinMax(min, max) if not isinstance(min, str) else None
-        for min, max in zip(mins, maxs)
-    ]
-
-    ucds = [guess_ucd(column_name, web_search) for column_name in column_names]
-    units = []
-    for column_name in column_names:
-        possible_unit = "--"
-        for protected_word in protected_words:
-            if len(protected_word.name.split("_")) > 1:
-                if protected_word.name in column_name:
-                    if not possible_unit:
-                        possible_unit = protected_word.unit[0]
-
-            for word in column_name.split("_"):
-                if word == protected_word.name:
-                    if not possible_unit:
-                        possible_unit = protected_word.unit[0]
-        units.append(possible_unit)
-    field_data = []
-
-    for name, data_type, ucd, qc, unit in zip(
-        column_names, data_types, ucds, qcs, units
-    ):
-        field_data.append(ColumnMetaData(name, ucd, data_type, qc, unit=unit))
-    return field_data
-
-
-def make_maml(file_name: str) -> None:
+def make_maml(file_name: Path) -> None:
     """
     Creates the maml file from the .parquet file
     """
-    base_name = os.path.basename(os.path.splitext(file_name)[0])
-    df = pl.read_parquet(file_name)
-    basic_maml = Skeleton(base_name, fields_from_df(df))
-    basic_maml.to_file(file_name.replace(".parquet", ".maml"))
+    df = pl.scan_parquet(file_name)
+    fields = fields_from_lf(df)
+    if not fields:
+        print(
+            f"{ANSI.RED}{ANSI.BOLD}The parquet file '{file_name}' seems empty. MAML can not be built.{ANSI.RESET}"
+        )
+    else:
+        out_filename = file_name.with_suffix(".maml")
+        if _allowed_to_overwrite(out_filename):
+            basic_maml = Skeleton(file_name.stem, fields)
+            basic_maml.to_file(out_filename)
+            print(f"{ANSI.BOLD}MAML file written to '{out_filename}'.{ANSI.RESET}")

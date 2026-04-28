@@ -1,11 +1,13 @@
 """
-Logic for maml command
+Controller for the click command 'maml'.
+Separating into a separate file to limit import costs at runtime.
 """
 
+from pathlib import Path
 from .metadata_validator import read_and_validate_maml
 
 
-def _validate_maml(file_name: str, quiet=False, verbose=False):
+def validate_maml(file_name: Path, quiet=False, verbose=False):
     """
     Does the overall validation for the MAML file.
     """

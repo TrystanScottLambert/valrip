@@ -3,19 +3,22 @@ Module to handle validating the data in the parquet file.
 """
 
 from dataclasses import dataclass
+import os
+from pathlib import Path
 import polars as pl
-from polars.exceptions import InvalidOperationError
+
 
 from .status import Status, State, output_state
-from .data_types import ClosedInterval, ANSI
+from .WAVES_config import ClosedInterval, ANSI
 from .helper_validator_methods import (
     WHITESPACE_PADDING_LENGTH,
     check_column_range,
     print_header,
 )
+from .column_name_validator import ColumnNameReport, get_column_name_report
 
 
-def _find_column(standard_root_name: str, data_frame: pl.DataFrame) -> str | None:
+def find_column(standard_root_name: str, lazy_frame: pl.LazyFrame) -> str | None:
     """
     Attempts to find the column name that matches the root name.
     e.g. 'ra' would be the root name and a column called ra_j2000 would be
@@ -23,80 +26,78 @@ def _find_column(standard_root_name: str, data_frame: pl.DataFrame) -> str | Non
 
     Assumes columns are in snake_case.
     """
-    for column_name in data_frame.columns:
+    for column_name in lazy_frame.collect_schema().names():
         for word in column_name.split("_"):
             if word == standard_root_name:
                 return column_name
     return None
 
 
-def validate_ra(data_frame: pl.DataFrame, ra_column_name=None) -> Status:
+def check_ra(lazy_frame: pl.LazyFrame, ra_column_name=None) -> Status:
     """
     Checks that the ra column is correct if it exists.
     """
     if not ra_column_name:
-        ra_column_name = _find_column("ra", data_frame)
+        ra_column_name = find_column("ra", lazy_frame)
     if not ra_column_name:
         return Status(State.PASS)
-    valid = check_column_range(data_frame, ra_column_name, 0, 360, ClosedInterval.LEFT)
+    valid = check_column_range(lazy_frame, ra_column_name, 0, 360, ClosedInterval.LEFT)
     if valid:
         return Status(State.PASS, f"{ra_column_name} in range [0, 360)")
     return Status(State.FAIL, f"{ra_column_name} not in range [0, 360)")
 
 
-def validate_dec(data_frame: pl.DataFrame, dec_column_name=None) -> Status:
+def check_dec(lazy_frame: pl.LazyFrame, dec_column_name=None) -> Status:
     """
     Checks that the dec column is correct if it exists.
     """
     if not dec_column_name:
-        dec_column_name = _find_column("dec", data_frame)
+        dec_column_name = find_column("dec", lazy_frame)
     if not dec_column_name:
         return Status(State.PASS)
     valid = check_column_range(
-        data_frame, dec_column_name, -90, 90, ClosedInterval.BOTH
+        lazy_frame, dec_column_name, -90, 90, ClosedInterval.BOTH
     )
     if valid:
         return Status(State.PASS, f"{dec_column_name} in range [-90, 90]")
     return Status(State.FAIL, f"{dec_column_name} not in range [-90, 90]")
 
 
-def check_no_minus_999(data_frame: pl.DataFrame) -> Status:
+def check_no_minus_999(data_frame: pl.LazyFrame, batch_size: int = 10) -> Status:
     """
     Checks that there are no -999 values anywhere in the table.
-
-    True => There aren't any.
-    False => There are.
-
-    Also returns a list of all columns that do have -999 value in them.
+    Processed in batches to bound peak memory on wide tables.
     """
-    valid = True
-    bad_columns = []
-    for column in data_frame:
-        try:
-            if -999 in column:
-                valid = False
-                bad_columns.append(column.name)
-        except InvalidOperationError:
-            pass
+    schema = data_frame.collect_schema()
 
-        try:
-            if "-999" in column:
-                valid = False
-                bad_columns.append(column.name)
-        except InvalidOperationError:
-            pass
-    if len(bad_columns) == 0:
-        bad_columns = None
-    if valid:
+    # Only numeric and string columns can contain -999
+    checkable = [
+        (name, dtype)
+        for name, dtype in schema.items()
+        if dtype.is_numeric() or dtype == pl.String
+    ]
+
+    if not checkable:
         return Status(State.PASS)
-    return Status(
-        State.FAIL, ",".join(bad_columns)
-    )  
+
+    bad_columns = []
+    for i in range(0, len(checkable), batch_size):  # Batching to reduce memory
+        batch = checkable[i : i + batch_size]
+        exprs = [
+            (pl.col(name) == (-999 if dtype.is_numeric() else "-999")).any().alias(name)
+            for name, dtype in batch
+        ]
+        result = data_frame.select(exprs).collect().row(0, named=True)
+        bad_columns.extend(name for name, has_bad in result.items() if has_bad)
+
+    if not bad_columns:
+        return Status(State.PASS)
+    return Status(State.FAIL, ",".join(bad_columns))
 
 
 @dataclass
 class DataValueReport:
-    table_name: str
+    table_name: Path
     valid_ra: Status
     valid_dec: Status
     no_999: Status
@@ -159,9 +160,7 @@ class DataValueReport:
 
             no_999_info = ""
             if self.no_999.state != State.PASS and self.no_999.message:
-                bad_columns = self.no_999.message.split(
-                    ","
-                )
+                bad_columns = self.no_999.message.split(",")
                 for column_name in bad_columns:
                     no_999_info += f"\n      {ANSI.RED} → Column '{column_name}' has -999 values. Using -999 as a None value is not permited.{ANSI.RESET}"
 
@@ -171,16 +170,51 @@ class DataValueReport:
                 )
 
 
-def validate_table(df: pl.DataFrame, table_name: str) -> DataValueReport:
+def check_table(lf: pl.LazyFrame, table_name: Path) -> DataValueReport:
     """
     Performs all the data validation checks on the given table.
     """
-    ra_valid = validate_ra(df)
-    dec_valid = validate_dec(df)
-    no_999 = check_no_minus_999(df)
+    ra_valid = check_ra(lf)
+    dec_valid = check_dec(lf)
+    no_999 = check_no_minus_999(lf)
     return DataValueReport(
         table_name,
         ra_valid,
         dec_valid,
         no_999,
     )
+
+
+def read_and_validate_parquet(
+    file_name: Path,
+    quiet: bool = False,
+    verbose: bool = False,
+    return_reports: bool = False,
+) -> pl.LazyFrame | tuple[pl.LazyFrame, DataValueReport, list[ColumnNameReport]]:
+    """
+    Validates the contents of a Parquet file, both the data and the column names.
+    """
+    if not os.path.isfile(file_name):
+        print(f"{ANSI.BOLD}{ANSI.RED} File Not Found: {file_name}{ANSI.RESET}")
+        return None
+    lf = pl.scan_parquet(file_name)
+    table_report = check_table(lf, file_name)
+
+    column_names = lf.collect_schema().names()
+    column_reports = [
+        get_column_name_report(column_name) for column_name in column_names
+    ]
+
+    if not quiet:
+        table_report.print_report(verbose)
+        print_header("Column Name Validation Report")
+
+        for report in column_reports:
+            report.print_report(verbose)
+
+        print(f"{'=' * 80}")
+
+    if return_reports:
+        return lf, table_report, column_reports
+
+    return lf

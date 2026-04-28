@@ -5,7 +5,7 @@ Module for storing the Status and error handling data structures
 from dataclasses import dataclass
 from enum import Enum
 
-from rip_validator.data_types import ANSI
+from rip_validator.WAVES_config import ANSI
 
 
 class State(Enum):

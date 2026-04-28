@@ -5,7 +5,7 @@ Module to handle versioning
 from typing import Optional
 import httpx
 from rip_validator import __version__
-from .data_types import ANSI
+from .WAVES_config import ANSI
 
 GIT_HUB_URL = "https://github.com/TrystanScottLambert/valrip"
 

@@ -3,7 +3,12 @@ Stripped down clone of the astropy ucd checker https://docs.astropy.org/en/stabl
 """
 
 import re
+import httpx
+import json
+from itertools import permutations
+
 from rip_validator import resources_dir
+from .settings_config import protected_words, filter_words, exceptions
 
 
 class UCDWords:
@@ -64,15 +69,13 @@ def validate_ucd(ucd: str) -> None:
     """
     Parse the UCD into its component parts.
 
-    Parameters
-    ----------
-    ucd: The UCD string
+    :param ucd: The UCD string
 
 
     Raises
     ------
     ValueError
-        if *ucd* is invalid
+        If ucd is invalid.
     """
     if ucd == "":
         return None
@@ -88,10 +91,6 @@ def validate_ucd(ucd: str) -> None:
 
     parts = ucd.split(";")
     for i, word in enumerate(parts):
-        colon_count = word.count(":")
-        if colon_count > 0:
-            raise ValueError(f"Too many colons in '{word}'. Name spaces not allowed")
-
         if not re.match(word_re, word):
             raise ValueError(f"Invalid word '{word}'")
 
@@ -111,3 +110,77 @@ def validate_ucd(ucd: str) -> None:
                     )
                 else:
                     raise ValueError(f"Unknown word '{word}'")
+
+
+def scrape_waves_ucd(column_name: str) -> str:
+    """
+    Helper function will try to guess the UCD from the protected_words and filter configs.
+    """
+    is_filter = False
+    current_ucds = []
+    for exception in exceptions:
+        if exception.name in column_name:
+            current_ucds += [exception.ucd]
+    for protected_word in protected_words:
+        if "_" in protected_word.name:
+            if protected_word.name in column_name:
+                current_ucds += protected_word.ucd
+        else:
+            for word in column_name.split("_"):
+                if word == protected_word.name:
+                    current_ucds += protected_word.ucd
+    for filter_word in filter_words:
+        if filter_word.name in column_name:
+            current_ucds += [filter_word.secondary_ucd]
+            is_filter = True
+    full_ucds = list(dict.fromkeys(";".join(current_ucds).split(";")))
+
+    combined = ";".join(full_ucds)
+    if ";" not in combined and is_filter and "phot.mag" not in combined:
+        combined = f"phot.mag;{combined}"
+        is_filter = False
+
+    # Validate the ucd and permuate until we find a valid one. Else give up
+    try:
+        validate_ucd(combined)
+    except ValueError:
+        # Try all permutations to see if any are valid.
+        words = combined.split(";")
+        current_solution = ""
+        for i in range(len(words) - 1):
+            for permutation in permutations(words, i + 1):
+                try:
+                    permeated_combination = ";".join(permutation)
+                    validate_ucd(permeated_combination)
+                    if permeated_combination.count(";") > current_solution.count(";"):
+                        current_solution = permeated_combination
+                except ValueError:
+                    pass
+        return current_solution
+
+    return combined
+
+
+def scrape_cds_ucd(column_name: str) -> str | None:
+    """
+    Makes a request to https://cdsweb.u-strasbg.fr/UCD/ucd-finder/ and returns best guess at UCD.
+    """
+    sanitized_string = column_name.translate(str.maketrans("-_.", "   "))
+    re = httpx.get(
+        f"https://cdsweb.u-strasbg.fr/UCD/ucd-finder/suggest?d={sanitized_string}"
+    )
+    re_dict = json.loads(re.text)
+    try:
+        return re_dict["ucd"][0]["ucd"]
+    except IndexError:
+        return None
+
+
+def guess_ucd(column_name: str, web_search: bool = True) -> str | None:
+    """
+    Looks for a WAVES UCD if it exists or else scrapes the CDS website (if web_search is true).
+    """
+    ucd = scrape_waves_ucd(column_name)
+    if ucd == "" and web_search:
+        ucd = scrape_cds_ucd(column_name)
+    return ucd

@@ -8,6 +8,7 @@
 #   5. Replace Survey and License string types with the relevant enums from .data_types
 #   6. Remove the pydantic.Extra import, import pydantic.ConfigDict, and replace the
 #      "class Config: extra = Extra.forbid" with "model_config = ConfigDict(extra="forbid")""
+#   7. Implement the customised field_validators (these can be found in the Git history if you need to regenerate this file)
 
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from pydantic import (
     ConfigDict,
     Field,
     field_validator,
+    StrictInt,
 )
 from pydantic_core import PydanticCustomError
 
@@ -29,19 +31,15 @@ from rip_validator.helper_validator_methods import (
     raise_waves_missing_error,
 )
 from rip_validator.ucd_validator import validate_ucd as astropy_validate_udc
-from .data_types import (
+from .WAVES_config import (
     MAML_VERSION,
     SurveyName,
     License,
     ANSI,
     WAVESCustomExceptions,
     WAVESDataTypes,
+    EMAIL_REGEX,
 )
-
-import re
-
-
-_EMAIL_RE = re.compile(r"^(?P<name>.+?)\s*<(?P<email>[^>]+)>$")
 
 
 class DOIEntry(BaseModel):
@@ -86,7 +84,7 @@ class WavesMamlSchema(BaseModel):
     survey: SurveyName
     dataset: str
     table: str
-    version: str | float
+    version: StrictInt
     date: date_aliased
 
     author: str = Field(..., description="Required lead author name and <email>")
@@ -118,6 +116,11 @@ class WavesMamlSchema(BaseModel):
         Does not validate that survey is one of the accepted values. This is built into
         the pydantic validation that occurs after the custom validation, by defining survey
         as an enum, SurveyName.
+
+        Raises
+        ------
+        ValueError
+            If survey is empty.
         """
         if not survey:
             raise_waves_missing_error()
@@ -129,6 +132,11 @@ class WavesMamlSchema(BaseModel):
         """
         Validates for:
         1. dataset is not empty.
+
+        Raises
+        ------
+        ValueError
+            If dataset is empty.
         """
         if not dataset:
             raise_waves_missing_error()
@@ -140,6 +148,11 @@ class WavesMamlSchema(BaseModel):
         """
         Validates for:
         1. table is not empty.
+
+        Raises
+        ------
+        ValueError
+            If table is empty.
         """
         if not table:
             raise_waves_missing_error()
@@ -151,6 +164,11 @@ class WavesMamlSchema(BaseModel):
         """
         Validates for:
         1. version is not empty.
+
+        Raises
+        ------
+        ValueError
+            If version is empty.
         """
         if not version:
             raise_waves_missing_error()
@@ -166,6 +184,11 @@ class WavesMamlSchema(BaseModel):
         Does not validate that date is an appropriate date object. This is built into
         the pydantic validation that occurs after the custom validation, by defining date
         as a data object.
+
+        Raises
+        ------
+        ValueError
+            If date is empty.
         """
         if not date:
             raise_waves_missing_error()
@@ -176,9 +199,16 @@ class WavesMamlSchema(BaseModel):
     def validate_author(cls, author: str) -> str:
         """
         Validates for:
-        1. Author is not empty,
-        3. Author adheres to the required syntax.
-        4. Author passes a validate_email check from email_validator package.
+        1. author is not empty,
+        3. author adheres to the required syntax,
+        4. author passes a validate_email check from email_validator package.
+
+        Raises
+        ------
+        ValueError
+            If author is empty,
+            If author has incorrect syntax,
+            If author is an invalid email (using the email_validator package).
         """
         if not author:
             raise_waves_missing_error()
@@ -186,10 +216,10 @@ class WavesMamlSchema(BaseModel):
         if not isinstance(author, str):
             raise ValueError(f"Invalid author '{author}'.")
 
-        match = _EMAIL_RE.match(author)
+        match = EMAIL_REGEX.match(author)
         if not match:
             raise ValueError(
-                f"{author}. Must be in the format 'Full Name <email@example.com>'.",
+                f"Invalid author {author}. Must be in the format 'Full Name <email@example.com>'.",
             )
 
         email = match.group("email")
@@ -200,7 +230,7 @@ class WavesMamlSchema(BaseModel):
             try:
                 validate_email(
                     email, check_deliverability=False, dns_resolver=False
-                )  # Without checking deliverability
+                )  # Without checking deliverability (requires internet).
             # Non-generic exception to catch actual invalid email addresses.
             except EmailNotValidError as e:
                 raise ValueError(f"Invalid email address '{email}': {e}.")
@@ -216,11 +246,20 @@ class WavesMamlSchema(BaseModel):
     def validate_coauthors(cls, coauthors: list[str]):
         """
         Validates for:
-        1. Value is a list,
-        2. List is not empty,
-        3. Each coauthor is not empty,
-        4. Each coauthor adheres to the required syntax.
-        5. Each coauthor passes a validate_email check from email_validator package.
+        1. coauthors is a list,
+        2. list is not empty,
+        3. each coauthor is not empty,
+        4. each coauthor adheres to the required syntax,
+        5. each coauthor passes a validate_email check from email_validator package.
+
+        Raises
+        ------
+        ValueError
+            If coauthors is not a list,
+            If coauthors is empty,
+            If any element in coauthors is empty,
+            If any element in coauthors has incorrect syntax,
+            If any element has an invalid email (using the email_validator package).
         """
         if not coauthors:
             raise_waves_missing_error()
@@ -237,7 +276,7 @@ class WavesMamlSchema(BaseModel):
                     )
                 )
             else:
-                match = _EMAIL_RE.match(coauthor)
+                match = EMAIL_REGEX.match(coauthor)
                 if not match:
                     error_messages.append(
                         format_error_and_location(
@@ -258,7 +297,7 @@ class WavesMamlSchema(BaseModel):
                     try:
                         validate_email(
                             email, check_deliverability=False, dns_resolver=False
-                        )  # Without checking deliverability
+                        )  # Without checking deliverability (requires internet).
                     # Non-generic exception to catch actual invalid email addresses.
                     except EmailNotValidError as e:
                         error_messages.append(
@@ -289,16 +328,24 @@ class WavesMamlSchema(BaseModel):
     def validate_DOIs(cls, dois: str) -> str:
         """
         Validates for:
-        1. Value is a list of DOI objects,
-        2. List is not empty,
-        3. Each DOI is not empty,
-        4. Each of the (required) submodel fields (DOI, type) are not empty.
+        1. DOIs is a list of DOI objects,
+        2. list is not empty,
+        3. each DOI is not empty,
+        4. each of the (required) submodel fields (DOI, type) are not empty.
+
+        Raises
+        ------
+        ValueError
+            If DOIs is not a list,
+            If DOIs is empty,
+            If any element is empty,
+            If any element contains a submodel field which is empty.
         """
         if not dois:
             raise_waves_missing_error()
 
         if not isinstance(dois, list):
-            raise ValueError("Invalid DOIs - this must be a list")
+            raise ValueError(f"Invalid DOIs {dois} - this must be a list")
 
         error_messages = []
 
@@ -312,12 +359,12 @@ class WavesMamlSchema(BaseModel):
             elif not isinstance(doi, dict):
                 error_messages.append(
                     format_error_and_location(
-                        "dois",
+                        "DOIs",
                         doi,
                         ii,
                         None,
                         None,
-                        "Invalid doi - this must be a doi object",
+                        "Invalid DOI - this must be a DOI object",
                     )
                 )
                 raise ValueError(f"Invalid DOIs '{dois}'.")
@@ -347,16 +394,24 @@ class WavesMamlSchema(BaseModel):
     def validate_depends(cls, depends: str) -> str:
         """
         Validates for:
-        1. Value is a list of depend objects,
-        2. List is not empty,
-        3. Each depend field is not empty,
-        4. Each of the (required) submodel fields (survey, dataset, table, version) are not empty,
+        1. depends is a list of depend objects,
+        2. list is not empty,
+        3. each depend field is not empty,
+        4. each of the (required) submodel fields (survey, dataset, table, version) are not empty.
+
+        Raises
+        ------
+        ValueError
+            If depends is not a list,
+            If depends is empty,
+            If any element is empty,
+            If any element contains a submodel field which is empty.
         """
         if not depends:
             raise_waves_missing_error()
 
         if not isinstance(depends, list):
-            raise ValueError("Invalid depends - this must be a list")
+            raise ValueError(f"Invalid depends {depends} - this must be a list")
         error_messages = []
         for ii, depend in enumerate(depends):
             if not depend:
@@ -435,6 +490,11 @@ class WavesMamlSchema(BaseModel):
         """
         Validates for:
         1. description is not empty.
+
+        Raises
+        ------
+        ValueError
+            If description is empty.
         """
         if not description:
             raise_waves_missing_error()
@@ -445,15 +505,22 @@ class WavesMamlSchema(BaseModel):
     def validate_comments(cls, comments: str) -> str:
         """
         Validates for:
-        1. Value is a list of strings,
-        2. List is not empty,
-        3. Each comment is not empty.
+        1. comments is a list of strings,
+        2. list is not empty,
+        3. each comment is not empty.
+
+        Raises
+        ------
+        ValueError
+            If comments is not a list,
+            If comments is empty,
+            If any element is empty.
         """
         if not comments:
             raise_waves_missing_error()
 
         if not isinstance(comments, list):
-            raise ValueError("Invalid comments - this must be a list")
+            raise ValueError(f"Invalid comments {comments} - this must be a list")
         error_messages = []
 
         for ii, comment in enumerate(comments):
@@ -482,6 +549,11 @@ class WavesMamlSchema(BaseModel):
         Does not validate that license is one of the accepted values. This is built into
         the pydantic validation that occurs after the custom validation, by defining license
         as an enum, License.
+
+        Raises
+        ------
+        ValueError
+            If license is empty.
         """
         if not license:
             raise_waves_missing_error()
@@ -494,6 +566,12 @@ class WavesMamlSchema(BaseModel):
         Validates for:
         1. MAML_version is not empty,
         2. MAML_version is correct.
+
+        Raises
+        ------
+        ValueError
+            If MAML_version is empty,
+            If MAML_version is incorrect.
         """
         if not MAML_version:
             raise_waves_missing_error()
@@ -508,17 +586,27 @@ class WavesMamlSchema(BaseModel):
     def validate_fields(cls, fields: list[dict]):
         """
         Validates for:
-        1. Value is a list of field objects,
-        2. List is not empty,
-        3. Each field element is not empty,
-        4. Each of the (required) submodel fields (name, unit, info, ucd, data_type) are not empty,
-        5. Various more specific validation on the submodel fields which require it (ucd, data_type, ucd),
-           a) Validates ucd with the same method that astropy implements,
-           b) Validates that the provided field data_type is one of the WAVES-accepted data types.
-           c) Validates qc for:
-              i) If qc is present, both subfields (min and max) are also present.
-              ii) The qc value type matches the data_type provided for this field.
-        6. No fields with the same name exist (field duplication).
+        1. fields is a list of field objects,
+        2. list is not empty,
+        3. each field element is not empty,
+        4. each of the (required) submodel fields (name, unit, info, ucd, data_type) are not empty,
+        5. various more specific validation on the submodel fields which require it (ucd, data_type, ucd):
+           a) validates ucd with the same method that astropy implements,
+           b) validates that the provided field data_type is one of the WAVES-accepted data types,
+           c) validates qc for:
+              i) if qc is present, both subfields (min and max) are also present,
+              ii) the qc value type matches the data_type provided for this field.
+        6. no fields with the same name exist (field duplication).
+
+        Raises
+        ------
+        ValueError
+            If fields is not a list,
+            If fields is empty,
+            If any element is empty,
+            If any element contains a submodel field which is empty,
+            If any element contains an invalid submodel field,
+            If any element has a name duplicated elsewhere.
         """
         if not fields:
             raise_waves_missing_error()
@@ -530,11 +618,11 @@ class WavesMamlSchema(BaseModel):
 
         unique_names = dict[str, list[int]]()
         duplicates = {}
-        for ii, field in enumerate(fields):
+        for i, field in enumerate(fields):
             if not field:
                 error_messages.append(
                     format_error_and_location(
-                        "field", None, ii, None, None, "Field required"
+                        "field", None, i, None, None, "Field required"
                     )
                 )
             # If this is not a valid field object, do not keep validating this list item, just check the next one
@@ -543,7 +631,7 @@ class WavesMamlSchema(BaseModel):
                     format_error_and_location(
                         "fields",
                         field,
-                        ii,
+                        i,
                         None,
                         None,
                         "Invalid field - this must be a field object",
@@ -556,43 +644,43 @@ class WavesMamlSchema(BaseModel):
                 if "name" not in field.keys() or not field["name"]:
                     error_messages.append(
                         format_error_and_location(
-                            "field", None, ii, "name", None, "Field required"
+                            "field", None, i, "name", None, "Field required"
                         )
                     )
                 else:
                     field_name = field["name"]
                     # If "name" is present, check for duplicates
                     if field["name"] in unique_names.keys():
-                        duplicates[f"{ii}"] = field["name"]
+                        duplicates[f"{i}"] = field["name"]
                         error_messages.append(
-                            f"\n → Incorrect element: {field['name']} (element ({ii}). Duplicate fields are not allowed, see also element {unique_names[field['name']]}.\n",
+                            f"\n → Incorrect element: {field['name']} (element ({i}). Duplicate fields are not allowed, see also element {unique_names[field['name']]}.\n",
                         )
                     else:
                         if field["name"] not in unique_names.keys():
                             unique_names[field["name"]] = []
-                        unique_names[field["name"]].append(ii)
+                        unique_names[field["name"]].append(i)
 
                 if "unit" not in field.keys() or not field["unit"]:
                     error_messages.append(
                         format_error_and_location(
-                            "field", field_name, ii, "unit", None, "Field required"
+                            "field", field_name, i, "unit", None, "Field required"
                         )
                     )
                 if "info" not in field.keys() or not field["info"]:
                     error_messages.append(
                         format_error_and_location(
-                            "field", field_name, ii, "info", None, "Field required"
+                            "field", field_name, i, "info", None, "Field required"
                         )
                     )
                 if "ucd" not in field.keys() or not field["ucd"]:
                     error_messages.append(
                         format_error_and_location(
-                            "field", field_name, ii, "ucd", None, "Field required"
+                            "field", field_name, i, "ucd", None, "Field required"
                         )
                     )
                 else:
                     try:
-                        validate_ucd(field, ii)
+                        _validate_ucd(field, i)
                     except PydanticCustomError as e:
                         error_messages.append(e.message())
                 if "data_type" not in field.keys() or not field["data_type"]:
@@ -600,7 +688,7 @@ class WavesMamlSchema(BaseModel):
                         format_error_and_location(
                             "field",
                             field_name,
-                            ii,
+                            i,
                             "data_type",
                             None,
                             "Field required",
@@ -608,12 +696,12 @@ class WavesMamlSchema(BaseModel):
                     )
                 else:
                     try:
-                        validate_data_type(field, ii)
+                        _validate_data_type(field, i)
                     except PydanticCustomError as e:
                         error_messages.append(e.message())
 
                 try:
-                    validate_qc(field, ii)
+                    _validate_qc(field, i)
                 except PydanticCustomError as e:
                     error_messages.append(e.message())
 
@@ -627,14 +715,18 @@ class WavesMamlSchema(BaseModel):
         return fields
 
 
-def validate_ucd(field: dict, ii: int):
+def _validate_ucd(field: dict, index: int):
     """
     Validates UCDs with the same method that astropy implements.
 
     :param field: The whole field submodel (as a dict).
-    :type field: dict
-    :param ii: The index of the field.
-    :type ii: int
+    :param index: The index of the field.
+
+    Raises
+    ------
+    ValueError
+        If field["ucd"] is empty,
+        If field["ucd"] is an invalid astropy ucd.
     """
     field_name = None
     if "name" in field.keys() and field["name"]:
@@ -647,19 +739,23 @@ def validate_ucd(field: dict, ii: int):
         except ValueError as e:
             raise_waves_list_error(
                 format_error_and_location(
-                    "field", field_name, ii, "ucd", field["ucd"], e
+                    "field", field_name, index, "ucd", field["ucd"], e
                 )
             )
 
 
-def validate_data_type(field: dict, ii: int):
+def _validate_data_type(field: dict, index: int):
     """
     Validates that the provided field data_type is one of the WAVES-accepted data types.
 
     :param field: The whole field submodel (as a dict).
-    :type field: dict
-    :param ii: The index of the field.
-    :type ii: int
+    :param index: The index of the field.
+
+    Raises
+    ------
+    ValueError
+        If field["data_type"] is empty,
+        If field["data_type"] is not a valid WAVESDataType.
     """
     field_name = None
     if "name" in field.keys() and field["name"]:
@@ -669,7 +765,7 @@ def validate_data_type(field: dict, ii: int):
             format_error_and_location(
                 "field",
                 field_name,
-                ii,
+                index,
                 "data_type",
                 field["data_type"],
                 f"data_type must be one of: {[e.value for e in WAVESDataTypes]}",
@@ -677,16 +773,21 @@ def validate_data_type(field: dict, ii: int):
         )
 
 
-def validate_qc(field: dict, ii: int):
+def _validate_qc(field: dict, index: int):
     """
     Validates for:
     1. If qc is present, both subfields (min and max) are also present.
     2. The qc value type matches the data_type provided for this field.
 
     :param field: The whole field submodel (as a dict).
-    :type field: dict
-    :param ii: The index of the field.
-    :type ii: int
+    :param index: The index of the field.
+
+    Raises
+    ------
+    ValueError
+        If field["qc"] is empty,
+        If field["qc"] is missing either submodel field,
+        If field["qc"] is not the same type as field["data_type"].
     """
     field_name = None
     if "name" in field.keys() and field["name"]:
@@ -702,7 +803,7 @@ def validate_qc(field: dict, ii: int):
             format_error_and_location(
                 "field",
                 field_name,
-                ii,
+                index,
                 "qc",
                 field["qc"],
                 f"Only numeric fields may have a qc element, this field is type {field['data_type']}",
@@ -721,7 +822,7 @@ def validate_qc(field: dict, ii: int):
             format_error_and_location(
                 "field",
                 field_name,
-                ii,
+                index,
                 "qc",
                 field["qc"],
                 "Both min and max values must appear if field>qc is present.",
@@ -742,7 +843,7 @@ def validate_qc(field: dict, ii: int):
                 format_error_and_location(
                     "field",
                     field_name,
-                    ii,
+                    index,
                     "qc",
                     field["qc"],
                     f"Field is of integer type ({field['data_type']}) but field>qc value(s) are of float type - types must match.",
@@ -756,7 +857,7 @@ def validate_qc(field: dict, ii: int):
                 format_error_and_location(
                     "field",
                     field_name,
-                    ii,
+                    index,
                     "qc",
                     field["qc"],
                     f"Field is of float type ({field['data_type']}) but field>qc value(s) are of integer type - types must match.",

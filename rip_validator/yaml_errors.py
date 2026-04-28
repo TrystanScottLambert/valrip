@@ -2,16 +2,22 @@
 Module for handling YAML specific formatting errors.
 """
 
+from pathlib import Path
 from typing import Optional
-from .data_types import ANSI
-from .config import ucd_rules
+from .WAVES_config import ANSI
+from .settings_config import ucd_rules
 
 
-def check_yaml_colon_spacing(yaml_content: str) -> Optional[str]:
+def validate_yaml_colon_spacing(content: str) -> Optional[str]:
     """
-    Check if YAML content has missing spaces after colons in key-value pairs.
+    Check if YAML content has missing whitespace after colons in key-value pairs.
+
+    Raises
+    ------
+    ValueError
+        If YAML key-value pair has missing whitespace after the colon.
     """
-    lines = yaml_content.split("\n")
+    lines = content.split("\n")
 
     for line_num, line in enumerate(lines, start=1):
         # Skip empty lines and comments
@@ -74,20 +80,18 @@ def check_yaml_colon_spacing(yaml_content: str) -> Optional[str]:
                                     f"YAML requires a space after ':' in key-value pairs.\n"
                                     f"  Found: {ANSI.RESET}{ANSI.YELLOW}'{line.strip()}'{ANSI.RESET}\n"
                                 )
-                                return error_msg
-
-    return None
+                                raise ValueError(error_msg)
 
 
-def validate_yaml_file(file_path: str) -> bool:
+def validate_yaml_file(file_path: Path):
     """
     Validate a YAML file for proper colon spacing.
+
+    Raises
+    ------
+    ValueError
+        If YAML key-value pair has missing whitespace after the colon.
     """
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
-
-    error_msg = check_yaml_colon_spacing(content)
-    if error_msg:
-        print(error_msg)
-        return False
-    return True
+        validate_yaml_colon_spacing(content)
