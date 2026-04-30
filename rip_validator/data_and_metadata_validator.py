@@ -10,10 +10,10 @@ from dataclasses import dataclass
 import polars as pl
 
 from .status import Status, State
-from .WAVES_config import ClosedInterval, ANSI, ColumnMetaData, MamlMetaData
+from .WAVES_config import ClosedInterval, ANSI, ColumnMetaData
 from .helper_validator_methods import check_column_range, check_data_type, print_header
 from .data_validator import read_and_validate_parquet
-from .metadata_validator import read_and_validate_maml
+from .maml import read_and_validate_maml, MAMLMetaData
 
 
 def _compare_column_type(
@@ -144,7 +144,7 @@ class DataMetadataValueReport:
 def validate_data_and_metadata(
     table_name: str,
     data: pl.LazyFrame,
-    metadata: MamlMetaData,
+    metadata: MAMLMetaData,
     quiet: bool = False,
     verbose: bool = False,
     return_reports: bool = False,

@@ -4,10 +4,9 @@ Module for Report base class and helper functions.
 
 from typing import ClassVar
 
-
+from .helper_validator_methods import WHITESPACE_PADDING_LENGTH, print_header
+from .status import Status
 from .WAVES_config import ANSI
-from .helper_validator_methods import print_header, WHITESPACE_PADDING_LENGTH
-from .status import State, Status
 
 
 class Report:
@@ -22,14 +21,24 @@ class Report:
 
     @property
     def is_valid(self) -> bool:
-        if any(status.state == State.FAIL for _, status in self._status_fields()):
+        if any(status.is_fail for _, status in self._status_fields()):
             return False
         return True
 
+    @property
+    def has_warnings(self) -> bool:
+        return any(status.is_warn for _, status in self._status_fields())
+
     def print_report(self, verbose: bool = False) -> None:
         is_valid = self.is_valid
-        overall_color = ANSI.GREEN if is_valid else ANSI.RED
-        overall_status = "VALID" if is_valid else "INVALID"
+        has_warnings = self.has_warnings
+
+        if not is_valid:
+            overall_color, overall_status = ANSI.RED, "INVALID"
+        elif has_warnings:
+            overall_color, overall_status = ANSI.YELLOW, "VALID (with warnings)"
+        else:
+            overall_color, overall_status = ANSI.GREEN, "VALID"
 
         print_header(self.TITLE)
         print(
@@ -37,18 +46,22 @@ class Report:
             f"{overall_color}{overall_status}{ANSI.RESET}"
         )
 
-        if is_valid and not verbose:
+        if is_valid and not has_warnings and not verbose:
             return
 
         print(f"\n{ANSI.BOLD}Validation Checks:{ANSI.RESET}")
         print("-" * 80)
         for label, status in self._status_fields():
-            if status.state == State.FAIL or verbose:
-                detail = (
-                    f"\n     {ANSI.RED} → {status.message}{ANSI.RESET}"
-                    if status.state == State.FAIL and status.message
-                    else ""
-                )
-                padded = label.ljust(WHITESPACE_PADDING_LENGTH)
-                print(f"  {padded:<45} {status.output()}{detail}")
+            if status.is_pass and not verbose:
+                continue
+
+            if status.is_fail and status.message:
+                detail = f"\n     {ANSI.RED} → {status.message}{ANSI.RESET}"
+            elif status.is_warn and status.message:
+                detail = f"\n     {ANSI.YELLOW} → {status.message}{ANSI.RESET}"
+            else:
+                detail = ""
+
+            padded = label.ljust(WHITESPACE_PADDING_LENGTH)
+            print(f"  {padded:<45} {status.output()}{detail}")
         print("-" * 80)

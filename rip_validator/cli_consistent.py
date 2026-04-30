@@ -5,7 +5,7 @@ Separating into a separate file to limit import costs at runtime.
 
 from pathlib import Path
 from .data_validator import read_and_validate_parquet
-from .metadata_validator import read_and_validate_maml
+from .maml import read_and_validate_maml
 from .data_and_metadata_validator import validate_data_and_metadata
 
 

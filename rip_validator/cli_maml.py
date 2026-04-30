@@ -4,7 +4,7 @@ Separating into a separate file to limit import costs at runtime.
 """
 
 from pathlib import Path
-from .metadata_validator import read_and_validate_maml
+from .maml import read_and_validate_maml
 
 
 def validate_maml(file_name: Path, quiet=False, verbose=False):

@@ -1,19 +1,9 @@
 from enum import Enum, StrEnum
 from dataclasses import dataclass
-from datetime import datetime
 import polars as pl
 import re
 
 EMAIL_REGEX = re.compile(r"^(?P<name>.+?)\s*<(?P<email>[^>]+)>$")
-
-
-class WAVESCustomExceptions(StrEnum):
-    # pydantic handling of exceptions inside lists is not adequate, so we
-    # implement a custom validation and exception type to handle those use cases
-    LIST_EXCEPTION = "waves_custom_list_exception"
-    # pydantic does not recognise empty strings as missing values,
-    # so we implement custom validation for empty strings as "missing" values
-    MISSING_EXCEPTION = "waves_custom_missing_exception"
 
 
 class SurveyName(Enum):
@@ -106,16 +96,6 @@ class ANSI(StrEnum):
     BOLD = "\033[1m"
     GREY = "\033[90m"
     RESET = "\033[0m"
-
-
-@dataclass
-class Author:
-    name: str
-    surname: str
-    email: str
-
-    def __str__(self):
-        return f"{self.name.capitalize()} {self.surname.capitalize()} <{self.email}>"
 
 
 @dataclass
@@ -273,22 +253,3 @@ class Columns:
 class Doi:
     doi: str
     doi_type: str
-
-
-@dataclass
-class MamlMetaData:
-    survey: SurveyName
-    dataset: str
-    table: str
-    version: str
-    author: Author
-    description: str
-    maml_version: float
-    fields: Columns
-    date: str = str(datetime.today()).split(" ")[0]
-    coauthors: list[Author] | None = None
-    dois: list[Doi] | None = None
-    depends: list[Dependency] | None = None
-    comments: list[str] | None = None
-    license: License = License.PRIVATE
-    keywords: list[str] | None = None
