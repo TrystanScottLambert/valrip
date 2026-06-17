@@ -90,7 +90,7 @@ def format_metadata_table(metadata: list[dict]) -> str:
         for row in metadata
     ]
 
-    return "\n".join([header_row, separator] + data_rows) + "\n"
+    return f"{'\n'.join([header_row, separator] + data_rows)}\n"
 
 
 def _list_version_dirs(ref: str) -> list[int]:

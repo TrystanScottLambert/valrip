@@ -8,12 +8,14 @@ TODO #4: Extend this to validate the consistency of the DAML file too.
 from pathlib import Path
 from dataclasses import dataclass
 import polars as pl
+from typing import ClassVar
 
 from .status import Status, State
-from .WAVES_config import ClosedInterval, ANSI, ColumnMetaData
+from .WAVES_config import ClosedInterval, ColumnMetaData
 from .helper_validator_methods import check_column_range, check_data_type, print_header
 from .data_validator import read_and_validate_parquet
 from .maml import read_and_validate_maml, MAMLMetaData
+from .report import Report
 
 
 def _compare_column_type(
@@ -25,10 +27,9 @@ def _compare_column_type(
     actual_dtype = data.collect_schema()[column_name]
     expected_type = metadata_columns[column_name].data_type
     if check_data_type(actual_dtype, expected_type):
-        return Status(State.PASS)
+        return Status.passed()
     else:
-        return Status(
-            State.FAIL,
+        return Status.failed(
             f"Invalid datatype. MAML indicates the expected type is {expected_type} but the Parquet shows type actually is {actual_dtype}",
         )
 
@@ -52,93 +53,25 @@ def _compare_column_range(
     )
 
     if is_valid:
-        return Status(State.PASS)
+        return Status.passed()
     else:
-        return Status(
-            State.FAIL,
+        return Status.failed(
             f"Invalid range. Data must be between the supplied minimum {metadata_columns[column_name].qc.min} and the supplied maximum {metadata_columns[column_name].qc.max}",
         )
 
 
 @dataclass
-class DataMetadataValueReport:
-    column_name: str
+class DataMetadataValueReport(Report):
     column_in_both_files: Status
     valid_column_datatypes: Status | None
     valid_column_ranges: Status | None
 
-    def __post_init__(self) -> None:
-        self.valid = State.PASS
-        if any(
-            [
-                self.column_in_both_files.state == State.WARNING,
-                self.valid_column_datatypes
-                and self.valid_column_datatypes.state == State.WARNING,
-                self.valid_column_ranges
-                and self.valid_column_ranges.state == State.WARNING,
-            ]
-        ):
-            self.valid = State.WARNING
-        elif any(
-            [
-                self.column_in_both_files.state == State.FAIL,
-                self.valid_column_datatypes
-                and self.valid_column_datatypes.state == State.FAIL,
-                self.valid_column_ranges
-                and self.valid_column_ranges.state == State.FAIL,
-            ]
-        ):
-            self.valid = State.FAIL
-
-    def print_report(self, verbose=False) -> None:
-        """
-        Print a professional validation report with color-coded results.
-        """
-        # Overall column status
-        is_valid = self.valid == State.PASS
-        overall_color = ANSI.GREEN if is_valid else ANSI.RED
-        overall_status = "VALID" if is_valid else "INVALID"
-        print(
-            f"\n{ANSI.BOLD}Column:{ANSI.RESET} {self.column_name} | {ANSI.BOLD}Overall Status:{ANSI.RESET} {overall_color}{overall_status}{ANSI.RESET}"
-        )
-
-        if self.valid != State.PASS or verbose:
-            print(f"\n{ANSI.BOLD}Validation Checks:{ANSI.RESET}")
-            print(f"{'-' * 80}")
-
-            column_in_both_files_info = (
-                f"\n     {ANSI.RED} → {self.column_in_both_files.message}.{ANSI.RESET}"
-                if self.column_in_both_files.state == State.FAIL
-                else ""
-            )
-            if self.column_in_both_files.state == State.FAIL or verbose:
-                print(
-                    f"  Column present in both files:                 {self.column_in_both_files.output()}{column_in_both_files_info}"
-                )
-
-            if self.valid_column_datatypes:
-                valid_column_datatypes_info = (
-                    f"\n     {ANSI.RED} → {self.valid_column_datatypes.message}.{ANSI.RESET}"
-                    if self.valid_column_datatypes.state == State.FAIL
-                    else ""
-                )
-                if self.valid_column_datatypes.state == State.FAIL or verbose:
-                    print(
-                        f"  Valid column datatype:                        {self.valid_column_datatypes.output()} {valid_column_datatypes_info}"
-                    )
-
-            if self.valid_column_ranges:
-                valid_column_ranges_info = (
-                    f"\n     {ANSI.RED} → {self.valid_column_ranges.message}.{ANSI.RESET}"
-                    if self.valid_column_ranges.state == State.FAIL
-                    else ""
-                )
-                if self.valid_column_ranges.state == State.FAIL or verbose:
-                    print(
-                        f"  Valid column range:                           {self.valid_column_ranges.output()} {valid_column_ranges_info}"
-                    )
-
-            print(f"{'-' * 80}")
+    TITLE: ClassVar[str] = "Consistency Validation Report"
+    CHECK_LABELS: ClassVar[dict[str, str]] = {
+        "column_in_both_files": "Column present in both files:",
+        "valid_column_datatypes": "Valid column data types:",
+        "valid_column_ranges": "Valid column ranges:",
+    }
 
 
 def validate_data_and_metadata(
@@ -160,46 +93,38 @@ def validate_data_and_metadata(
     column_reports: list[DataMetadataValueReport] = []
 
     for column_name in all_columns:
-        in_both_files = Status(State.PASS)
+        in_both_files = Status.passed()
         valid_range = None
         valid_datatype = None
 
         if column_name in data_column_names and column_name in metadata_column_names:
-            in_both_files = Status(State.PASS)
+            in_both_files = Status.passed()
             if metadata_columns.columns[column_name].qc:
                 valid_range = _compare_column_range(
                     column_name, data, metadata_columns.columns
                 )
             else:
-                valid_range = Status(State.PASS)
+                valid_range = Status.passed()
             valid_datatype = _compare_column_type(
                 column_name, data, metadata_columns.columns
             )
 
             column_reports.append(
-                DataMetadataValueReport(
-                    column_name, in_both_files, valid_datatype, valid_range
-                )
+                DataMetadataValueReport(in_both_files, valid_datatype, valid_range)
             )
         elif column_name in data_column_names:
-            in_both_files = Status(
-                State.FAIL,
+            in_both_files = Status.failed(
                 f"{column_name} found in {table_name}.parquet but not in {table_name}.maml",
             )
             column_reports.append(
-                DataMetadataValueReport(
-                    column_name, in_both_files, valid_datatype, valid_range
-                )
+                DataMetadataValueReport(in_both_files, valid_datatype, valid_range)
             )
         else:  # column_name in metadata_column_names only
-            in_both_files = Status(
-                State.FAIL,
+            in_both_files = Status.failed(
                 f"{column_name} found in {table_name}.maml but not in {table_name}.parquet",
             )
             column_reports.append(
-                DataMetadataValueReport(
-                    column_name, in_both_files, valid_datatype, valid_range
-                )
+                DataMetadataValueReport(in_both_files, valid_datatype, valid_range)
             )
 
     if not quiet:
@@ -220,14 +145,11 @@ def consistency_state(directory: Path, quiet: bool, verbose: bool) -> State:
     final_state = State.PASS
     parquet_files = [p.stem for p in directory.glob("*.parquet")]
     for file in parquet_files:
-        lf, data_report, name_reports = read_and_validate_parquet(
+        lf, data_report = read_and_validate_parquet(
             directory / f"{file}.parquet", quiet, verbose, return_reports=True
         )
-        if data_report.valid == State.FAIL:
+        if not data_report.is_valid:
             final_state = State.FAIL
-        for column_report in name_reports:
-            if column_report.valid == State.FAIL:
-                final_state = State.FAIL
 
         maml_file = directory / f"{file}.maml"
         if maml_file.is_file():
@@ -239,6 +161,6 @@ def consistency_state(directory: Path, quiet: bool, verbose: bool) -> State:
                     file, lf, maml, quiet, verbose, return_reports=True
                 )
                 for report in reports:
-                    if report.valid == State.FAIL:
+                    if not report.is_valid:
                         final_state = State.FAIL
     return final_state

@@ -7,7 +7,7 @@ from typing import ClassVar
 import os
 from dataclasses import dataclass
 import yaml
-from .status import Status, State
+from .status import Status
 from .report import Report
 from .auto_version import get_next_table_versions, sha1_checksum
 
@@ -42,36 +42,34 @@ class Files:
 
     def check_all_maml_has_parquet(self) -> Status:
         if len(self.maml_files) == 0:
-            return Status(State.FAIL, "No maml files")
+            return Status.failed("No maml files")
         extra_maml = []
         for maml_file in self.maml_files:
             if maml_file.replace(".maml", ".parquet") not in self.parquet_files:
                 extra_maml.append(maml_file)
         if len(extra_maml) != 0:
-            return Status(
-                State.FAIL,
+            return Status.failed(
                 f"These maml files don't have corresponding parquet files: {extra_maml}",
             )
-        return Status(State.PASS)
+        return Status.passed()
 
     def check_all_parquet_has_maml(self) -> Status:
         if len(self.parquet_files) == 0:
-            return Status(State.FAIL, "No parquet files")
+            return Status.failed("No parquet files")
         extra_parquet = []
         for parquet_file in self.parquet_files:
             if parquet_file.replace(".parquet", ".maml") not in self.maml_files:
                 extra_parquet.append(parquet_file)
         if len(extra_parquet) != 0:
-            return Status(
-                State.FAIL,
+            return Status.failed(
                 f"These parquet files don't have corresponding maml files: {extra_parquet}",
             )
-        return Status(State.PASS)
+        return Status.passed()
 
     def check_markdown_files(self, rip_name: str) -> Status:
         notes_file = f"{rip_name}.md"
         if notes_file not in self.markdown_files:
-            return Status(State.FAIL, f"Missing RIP notes file: {notes_file}")
+            return Status.failed(f"Missing RIP notes file: {notes_file}")
 
         extra_markdown = []
         for markdown_file in self.markdown_files:
@@ -81,11 +79,10 @@ class Files:
             ):
                 extra_markdown.append(markdown_file)
         if len(extra_markdown) != 0:
-            return Status(
-                State.FAIL,
+            return Status.failed(
                 f"These md files don't have corresponding parquet files: {extra_markdown}",
             )
-        return Status(State.PASS)
+        return Status.passed()
 
     def check_extra_files(self, rip_name: str) -> Status:
         local_files = self.extra_files
@@ -96,11 +93,10 @@ class Files:
         if daml_file in local_files:
             local_files.remove(daml_file)
         if len(local_files) != 0:
-            return Status(
-                State.FAIL,
+            return Status.failed(
                 f"There are extra files that should not be in a RIP: {local_files}",
             )
-        return Status(State.PASS)
+        return Status.passed()
 
 
 def get_files(directory: Path) -> Files:
@@ -173,12 +169,10 @@ def check_table_versions(
             )
 
     if mismatches:
-        return Status(
-            State.FAIL,
-            "The following tables have incorrect versions:\n\t- "
-            + "\n\t- ".join(mismatches),
+        return Status.failed(
+            f"The following tables have incorrect versions:\n\t- {'\n\t- '.join(mismatches)}",
         )
-    return Status(State.PASS)
+    return Status.passed()
 
 
 def check_dataset_name_in_mamls(
@@ -190,11 +184,10 @@ def check_dataset_name_in_mamls(
             bad_mamls.append(maml_name)
 
     if len(bad_mamls) != 0:
-        return Status(
-            State.FAIL,
+        return Status.failed(
             f"The following maml files do not have '{rip_name}' as the dataset value: {bad_mamls}",
         )
-    return Status(State.PASS)
+    return Status.passed()
 
 
 def build_submission_report(directory: Path) -> None:

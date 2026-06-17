@@ -165,23 +165,22 @@ def validate_coauthors(coauthors: list[str] | None) -> Status:
     for author in coauthors:
         current = validate_author(author)
         if current.is_fail:
-            fail_messages.append(f"'{author}': {current.message}")
+            fail_messages.append(current.fail_message)
         elif current.is_warn:
-            warn_messages.append(f"'{author}': {current.message}")
+            warn_messages.append(current.fail_message)
 
     if fail_messages:
         if len(fail_messages) == 1:
             return Status.failed(fail_messages[0])
         return Status.failed(
-            "The following coauthors are not valid:\n\t- "
-            + "\n\t- ".join(fail_messages)
+            f"The following coauthors are not valid:\n\t- {'\n\t- '.join(fail_messages)}"
         )
 
     if warn_messages:
         if len(warn_messages) == 1:
             return Status.warned(warn_messages[0])
         return Status.warned(
-            "Some coauthors had warnings:\n\t- " + "\n\t- ".join(warn_messages)
+            f"Some coauthors had warnings:\n\t- {'\n\t- '.join(warn_messages)}"
         )
 
     return Status.passed()

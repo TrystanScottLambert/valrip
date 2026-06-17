@@ -31,6 +31,7 @@ from .helper_validator_methods import (
 from .report import Report
 from .status import Status
 from .ucd_validator import validate_ucd
+from .column_name_validator import validate_table_name, validate_field_names
 from .WAVES_config import (
     ANSI,
     MAML_VERSION,
@@ -86,6 +87,7 @@ class MAMLReport(Report):
     survey: Status
     dataset: Status
     table: Status
+    table_name: Status
     table_matches_filename: Status
     version: Status
     date: Status
@@ -99,6 +101,7 @@ class MAMLReport(Report):
     keywords: Status
     MAML_version: Status
     fields: Status
+    field_names: Status
     no_extra_fields: Status
     no_empty_optionals: Status
     keys_in_order: Status
@@ -108,6 +111,7 @@ class MAMLReport(Report):
         "survey": "Valid survey name:",
         "dataset": "Dataset name present:",
         "table": "Table name present:",
+        "table_name": "Table name valid:",
         "table_matches_filename": "Table name matches filename:",
         "version": "Version is integer:",
         "date": "Date valid iso format:",
@@ -121,6 +125,7 @@ class MAMLReport(Report):
         "keywords": "Keywords are valid:",
         "MAML_version": "MAML version is correct:",
         "fields": "Fields are valid:",
+        "field_names": "Field names are valid:",
         "no_extra_fields": "No extra fields:",
         "no_empty_optionals": "Optional fields aren't empty:",
         "keys_in_order": "Fields are in the correct order:",
@@ -143,6 +148,10 @@ def _validate_table(table: str) -> Status:
     if not table:
         return Status.failed("'table' is missing or empty and is a required field.")
     return Status.passed()
+
+
+def _validate_table_name(table_name: Path) -> Status:
+    return validate_table_name(table_name)
 
 
 def _validate_table_matches_filename(maml_file: Path, raw_yaml: dict | None) -> Status:
@@ -202,7 +211,7 @@ def _validate_dois(DOIs: list[dict] | None) -> Status:
 
     if errors:
         return Status.failed(
-            "'DOIs' has the following errors:\n\t- " + "\n\t- ".join(errors)
+            f"'DOIs' has the following errors:\n\t- {'\n\t- '.join(errors)}"
         )
     return Status.passed()
 
@@ -228,7 +237,7 @@ def _validate_depends(depends: list[dict] | None) -> Status:
 
     if errors:
         return Status.failed(
-            "'depends' has the following errors:\n\t- " + "\n\t- ".join(errors)
+            f"'depends' has the following errors:\n\t- {'\n\t- '.join(errors)}"
         )
     return Status.passed()
 
@@ -242,7 +251,7 @@ def _validate_comments(comments: list[str] | None) -> Status:
             errors.append(f"comments[{i}]: entry is empty.")
     if errors:
         return Status.failed(
-            "'comments' has the following errors:\n\t- " + "\n\t- ".join(errors)
+            f"'comments' has the following errors:\n\t- {'\n\t- '.join(errors)}"
         )
     return Status.passed()
 
@@ -258,7 +267,7 @@ def _validate_keywords(keywords: list[str] | None) -> Status:
             errors.append(f"keywords[{i}]: entry is empty.")
     if errors:
         return Status.failed(
-            "'keywords' has the following errors:\n\t- " + "\n\t- ".join(errors)
+            f"'keywords' has the following errors:\n\t- {'\n\t- '.join(errors)}"
         )
     return Status.passed()
 
@@ -335,9 +344,14 @@ def _validate_fields(fields: list[dict]) -> Status:
 
     if errors:
         return Status.failed(
-            "'fields' has the following errors:\n\t- " + "\n\t- ".join(errors)
+            f"'fields' has the following errors:\n\t- {'\n\t- '.join(errors)}"
         )
     return Status.passed()
+
+
+def _validate_field_names(fields: list[dict[str, str]]) -> Status:
+    field_names = [_field.get("name") for _field in fields]
+    return validate_field_names(field_names)
 
 
 def _validate_qc(qc, dtype: str | None, prefix: str) -> list[str]:
@@ -482,10 +496,14 @@ class PreMAML:
     _maml_file: Path | None = field(default=None, repr=False)
 
     def validate(self) -> MAMLReport:
+        assert (
+            self._maml_file
+        )  # I'm not sure if this can ever be none but we should check.
         return MAMLReport(
             survey=validate_survey(self.survey),
             dataset=_validate_dataset(self.dataset),
             table=_validate_table(self.table),
+            table_name=_validate_table_name(self._maml_file),
             table_matches_filename=_validate_table_matches_filename(
                 self._maml_file, self._raw_yaml
             )
@@ -503,6 +521,7 @@ class PreMAML:
             keywords=_validate_keywords(self.keywords),
             MAML_version=_validate_maml_version(self.MAML_version),
             fields=_validate_fields(self.fields),
+            field_names=_validate_field_names(self.fields),
             no_extra_fields=_validate_no_extra_fields(self._raw_yaml),
             no_empty_optionals=validate_empty_optionals(self._raw_yaml, MAML_REQUIRED),
             keys_in_order=validate_order(self._raw_yaml, MAML_ORDER),

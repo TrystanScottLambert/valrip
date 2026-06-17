@@ -2,20 +2,18 @@
 Module for validating parquet data ensuring tables follow the style standards.
 """
 
-from dataclasses import dataclass
-
+from pathlib import Path
 from thefuzz import fuzz
 
 from .filter_check import check_filter
-from .status import Status, State, output_state
-from .WAVES_config import ANSI
 from .settings_config import (
     MAX_COLUMN_LENGTH,
     WARN_COLUMN_LENGTH,
-    protected_words,
-    filter_words,
     exceptions,
+    filter_words,
+    protected_words,
 )
+from .status import Messages, Status
 
 NOT_ALLOWED = [
     "fred",
@@ -30,34 +28,42 @@ NOT_ALLOWED = [
 ]
 
 
-def check_length(name: str) -> Status:
+def check_length(name: str) -> Messages:
     """
     Checks that the lengths is less than the max length. Warns if more than 25.
     """
+    messages = Messages()
+
     name_length = len(name)
-    if name_length <= WARN_COLUMN_LENGTH:
-        return Status(State.PASS)
     if name_length > MAX_COLUMN_LENGTH:
-        return Status(State.FAIL)
-    return Status(State.WARNING)
+        messages.add_fail(f"Column name is too long ({len(name)}/{MAX_COLUMN_LENGTH})")
+    elif name_length > WARN_COLUMN_LENGTH:
+        messages.add_warning(
+            f"This length is valid but long ({len(name)}/{MAX_COLUMN_LENGTH})"
+        )
+
+    return messages
 
 
-def check_no_decimals(name: str) -> Status:
-    if "." not in name:
-        return Status(State.PASS)
-    return Status(State.FAIL)
+def check_no_decimals(name: str) -> Messages:
+    messages = Messages()
+    if "." in name:
+        messages.add_fail(f"No decimal points allowed, see {name}")
+    return messages
 
 
-def check_allowed(name: str) -> Status:
+def check_allowed(name: str) -> Messages:
     """
     Checks that the list of not allowed words isn't being used.
     """
+    messages = Messages()
+
     fail_ratio = 85
     warning_ratio = 80
     # If the word is >85% similar then it fails. If it's less than 85 but greater than 80 it's a warning.
     for banned_word in NOT_ALLOWED:
         if banned_word in name:
-            return Status(State.FAIL, banned_word)
+            messages.add_fail(f"{banned_word} is banned.")
     # fuzzy searching:
     for banned_word in NOT_ALLOWED:
         for word in name.split("_"):
@@ -65,264 +71,183 @@ def check_allowed(name: str) -> Status:
                 banned_word, word.lower()
             )  # This is how similar the word is to the banned word in percentage.
             if ratio > fail_ratio:
-                return Status(State.FAIL, f"{name} contains banned word: {banned_word}")
+                messages.add_fail(f"{name} contains banned word: {banned_word}.")
             if ratio > warning_ratio:
-                return Status(
-                    State.WARNING,
-                    f"{name} contains possible banned word: {banned_word}",
+                messages.add_warning(
+                    f"{name} contains possible banned word: {banned_word}."
                 )
 
-    return Status(State.PASS)
+    return messages
 
 
-def check_protected(name: str) -> Status:
+def check_protected(name: str) -> Messages:
     """
     Checks that protected names aren't being used in the tables.
     """
+    messages = Messages()
+
     for protected_word in protected_words:
-        for word in protected_word.common_representations:
-            if word == name:
-                return Status(State.FAIL, protected_word.name)
+        for representation in protected_word.common_representations:
+            if representation == name:
+                messages.add_fail(f"Protected word in use, use: {protected_word.name}")
             for target_word in name.split("_"):
-                if word.lower() == target_word.lower():
-                    return Status(State.WARNING, protected_word.name)
-    return Status(State.PASS)
+                if representation.lower() == target_word.lower():
+                    messages.add_warning(
+                        f"Protected word in use, did you mean: {protected_word.name}"
+                    )
+    return messages
 
 
-def check_exceptions(name: str) -> Status:
+def check_exceptions(name: str) -> Messages:
     """
-    Checks that if the exceptions exist that they are in the correct case.
+    Checks that if the exceptions exist they are in the correct case.
     """
+    messages = Messages()
     real_string = name.replace("_", "")
     for exc in exceptions:
         if exc.name.lower() in real_string.lower():
-            if exc.name in real_string:
-                return Status(State.PASS)
-            return Status(State.FAIL, exc.name)
-    return Status(State.PASS)
+            if exc.name not in real_string:
+                messages.add_fail(f"exception word {exc.name} is in incorrect case.")
+    return messages
 
 
-def check_alphanumeric(name: str) -> Status:
-    """
-    Checks that the given string is alpha numeric (excepting underscore)
-    """
-    no_underscores = name.replace("_", "")
-    if no_underscores.isalnum():
-        return Status(State.PASS)
-    return Status(State.FAIL)
-
-
-def check_alphabetical_start(name: str) -> Status:
+def check_alphabetical_start(name: str) -> Messages:
     """
     Checks that the string doesn't start with a number.
     """
-    if name[0].isalpha():
-        return Status(State.PASS)
-    return Status(State.FAIL)
+    messages = Messages()
+    if not name[0].isalpha():
+        messages.add_fail(f"{name} does not start with a letter.")
+    return messages
 
 
-def check_snake_case(name: str) -> Status:
+def check_snake_case(name: str) -> Messages:
     """
-    Checks that the name is in snake case excluding the filter names and the exceptions list
+    Checks that the name is in snake_case excluding the filter names and the exceptions list, returns a list of errors
     """
-    if name.startswith("_"):
-        return Status(State.FAIL, "Starts with underscore.")
+    messages = Messages()
+
     if name.endswith("_"):
-        return Status(State.FAIL, "Ends with underscore.")
+        messages.add_fail(f"{name} ends with an underscore.")
+    if name.startswith("_"):
+        messages.add_fail(f"{name} starts with an underscore.")
     if "__" in name:
-        return Status(State.FAIL, "Multiple underscores in a row.")
+        messages.add_fail(f"{name} has multiple underscores in a row.")
     actual_string = name
     for filter_name in filter_words:
         actual_string = actual_string.replace(filter_name.name, "")
     for exception in exceptions:
         actual_string = actual_string.replace(exception.name, "")
-    if actual_string == "":
-        return Status(State.PASS)
-    if actual_string.islower():
-        if check_alphanumeric(actual_string).state == State.FAIL:
-            return Status(State.FAIL)
-        return Status(State.PASS)
-    return Status(State.FAIL)
 
-
-@dataclass
-class ColumnNameReport:
-    """
-    Checks for given column name
-    """
-
-    column_name: str
-    alpha_numeric: Status
-    starts_with_letter: Status
-    snake_case: Status  # taking into account filters and exceptions
-    length: Status
-    no_decimals: Status
-    filter_name: Status
-    allowed_words: Status
-    no_exception_violation: Status
-    not_protected: Status
-
-    def __post_init__(self) -> None:
-        self.valid = State.PASS
-        if any(
-            [
-                self.alpha_numeric.state == State.WARNING,
-                self.starts_with_letter.state == State.WARNING,
-                self.snake_case.state == State.WARNING,
-                self.length.state == State.WARNING,
-                self.no_decimals.state == State.WARNING,
-                self.filter_name.state == State.WARNING,
-                self.allowed_words.state == State.WARNING,
-                self.no_exception_violation.state == State.WARNING,
-                self.not_protected.state == State.WARNING,
-            ]
-        ):
-            self.valid = State.WARNING
-        elif any(
-            [
-                self.alpha_numeric.state == State.FAIL,
-                self.starts_with_letter.state == State.FAIL,
-                self.snake_case.state == State.FAIL,
-                self.length.state == State.FAIL,
-                self.no_decimals.state == State.FAIL,
-                self.filter_name.state == State.FAIL,
-                self.allowed_words.state == State.FAIL,
-                self.no_exception_violation.state == State.FAIL,
-                self.not_protected.state == State.FAIL,
-            ]
-        ):
-            self.valid = State.FAIL
-
-    def print_report(self, verbose=False):
-        """
-        Print a professional validation report with color-coded results.
-        """
-        # Overall column status
-        overall_color = ANSI.GREEN if self.valid else ANSI.RED
-        print(
-            f"\n{ANSI.BOLD}Column:{ANSI.RESET} {self.column_name} | {ANSI.BOLD}Overall Status:{ANSI.RESET} {overall_color}{output_state(self.valid)}{ANSI.RESET}"
+    if not actual_string.islower():
+        messages.add_fail(
+            f"{name} is not snake_case (should be all lowercase, except for known exceptions)."
         )
+    no_underscores = name.replace("_", "")
+    if not no_underscores.isalnum():
+        messages.add_fail(f"{name} has non alpha-numeric characters.")
 
-        if self.valid != State.PASS or verbose:
-            print(f"\n{ANSI.BOLD}Validation Checks:{ANSI.RESET}")
-            print(f"{'-' * 80}")
-
-            if self.alpha_numeric.state != State.PASS or verbose:
-                print(
-                    f"  Alphanumeric (letters, numbers, underscores): {self.alpha_numeric.output()}"
-                )
-
-            if self.starts_with_letter.state != State.PASS or verbose:
-                print(
-                    f"  Starts with letter:                           {self.starts_with_letter.output()}"
-                )
-
-            if self.snake_case.state != State.PASS or verbose:
-                print(
-                    f"  Snake case format:                            {self.snake_case.output()}"
-                )
-
-            length_status = self.length.output()
-            length_info = ""
-            if self.length.state == State.WARNING:
-                length_info = f"\n    {ANSI.YELLOW} → Length is valid but long ({len(self.column_name)}/{MAX_COLUMN_LENGTH}).{ANSI.RESET}"
-            elif self.length.state == State.FAIL:
-                length_info = f"\n     {ANSI.RED} → Column name is too long ({len(self.column_name)}/{MAX_COLUMN_LENGTH}).{ANSI.RESET}"
-
-            if self.length.state != State.PASS or verbose:
-                print(
-                    f"  Length < {MAX_COLUMN_LENGTH} characters:                       {length_status}{length_info}"
-                )
-
-            if self.no_decimals.state != State.PASS or verbose:
-                print(
-                    f"  No decimal points:                            {self.no_decimals.output()}"
-                )
-
-            filter_status = self.filter_name.output()
-            filter_info = ""
-            if self.filter_name.state == State.WARNING:
-                filter_info = f"\n    {ANSI.YELLOW} → Possible filter name violation: did you mean '{self.filter_name.message}'?{ANSI.RESET}"
-            elif self.filter_name.state != State.PASS:
-                filter_info = (
-                    f"\n    {ANSI.RED} → Required: Use '{self.filter_name.message}'{ANSI.RESET}"
-                    if self.filter_name.state != State.PASS
-                    else ""
-                )
-
-            if self.filter_name.state != State.PASS or verbose:
-                print(
-                    f"  Valid filter name usage:                      {filter_status}{filter_info}"
-                )
-
-            exception_status = self.no_exception_violation.output()
-            exception_info = (
-                f"\n    {ANSI.RED} → Required: Use correct case '{self.no_exception_violation.message}'{ANSI.RESET}"
-                if self.no_exception_violation.state != State.PASS
-                else ""
-            )
-            if self.no_exception_violation.state != State.PASS or verbose:
-                print(
-                    f"  Exception words in correct case:              {exception_status}{exception_info}"
-                )
-
-            protected_status = self.not_protected.output()
-            protected_info = ""
-            if self.not_protected.state == State.WARNING:
-                protected_info = f"\n    {ANSI.YELLOW} → Protected word in use: Use correct form. Maybe '{self.not_protected.message}'?{ANSI.RESET}"
-            elif self.not_protected.state != State.PASS:
-                protected_info = f"\n    {ANSI.RED} → Protected word in use: Use correct case: '{self.not_protected.message}'{ANSI.RESET}"
-
-            if (
-                self.not_protected.state == State.WARNING
-                or self.not_protected.state != State.PASS
-                or verbose
-            ):
-                print(
-                    f"  Not violating protected standards:            {protected_status}{protected_info}"
-                )
-
-            allowed_status = self.allowed_words.output()
-            allowed_info = ""
-            if self.allowed_words.state == State.WARNING:
-                allowed_info = (
-                    f"\n    {ANSI.YELLOW} → {self.allowed_words.message}{ANSI.RESET}"
-                )
-            elif self.allowed_words.state != State.PASS:
-                allowed_info = (
-                    f"\n    {ANSI.RED} → {self.allowed_words.message}{ANSI.RESET}"
-                )
-            if self.allowed_words.state != State.PASS or verbose:
-                print(
-                    f"  No banned words:                              {allowed_status}{allowed_info}"
-                )
-
-            print(f"{'-' * 80}")
+    return messages
 
 
-def get_column_name_report(name: str) -> ColumnNameReport:
+def validate_table_name(name: Path) -> Status:
     """
-    Checks that the column names are correct and returns a report
+    Checks that the table name is correct and returns a Status object
     """
-    alphanumeric = check_alphanumeric(name)
-    letter_start = check_alphabetical_start(name)
-    valid_length = check_length(name)
-    snake_case = check_snake_case(name)
-    no_decimals = check_no_decimals(name)
-    valid_filter = check_filter(name)
-    allowed = check_allowed(name)
-    violates_exception = check_exceptions(name)
-    not_protected_word = check_protected(name)
+    errors = []
+    warnings = []
 
-    return ColumnNameReport(
-        column_name=name,
-        alpha_numeric=alphanumeric,
-        starts_with_letter=letter_start,
-        snake_case=snake_case,
-        length=valid_length,
-        no_decimals=no_decimals,
-        filter_name=valid_filter,
-        allowed_words=allowed,
-        no_exception_violation=violates_exception,
-        not_protected=not_protected_word,
-    )
+    # Get just the table name if the file name was passed in.
+    no_file_extension = name.stem
+
+    messages = check_alphabetical_start(no_file_extension)
+    errors += messages.fail
+    warnings += messages.warning
+
+    messages = check_snake_case(no_file_extension)
+    errors += messages.fail
+    warnings += messages.warning
+
+    messages = check_no_decimals(no_file_extension)
+    errors += messages.fail
+    warnings += messages.warning
+
+    messages = check_exceptions(no_file_extension)
+    errors += messages.fail
+    warnings += messages.warning
+
+    messages = check_protected(no_file_extension)
+    errors += messages.fail
+    warnings += messages.warning
+
+    if errors and warnings:
+        return Status.failed(
+            f"'{name}' has the following errors:\n\t- {'\n\t- '.join(filter(None, errors))}\n\n '{name}' also has the following warnings:\n\t- {'\n\t- '.join(filter(None, warnings))}"
+        )
+    if errors:
+        return Status.failed(
+            f"'{name}' has the following errors:\n\t- {'\n\t- '.join(filter(None, errors))}"
+        )
+    if warnings:
+        return Status.warned(
+            f"'{name}' has the following warnings:\n\t- {'\n\t- '.join(filter(None, warnings))}"
+        )
+    return Status.passed()
+
+
+def validate_field_names(names: str | list[str | None]) -> Status:
+    """
+    Checks that the field names are correct and returns a Status object
+    """
+    errors = []
+    warnings = []
+
+    for name in names:
+        if name:
+            messages = check_alphabetical_start(name)
+            errors += messages.fail
+            warnings += messages.warning
+
+            messages = check_length(name)
+            errors += messages.fail
+            warnings += messages.warning
+
+            messages = check_snake_case(name)
+            errors += messages.fail
+            warnings += messages.warning
+
+            messages = check_no_decimals(name)
+            errors += messages.fail
+            warnings += messages.warning
+
+            messages = check_filter(name)
+            errors += messages.fail
+            warnings += messages.warning
+
+            messages = check_allowed(name)
+            errors += messages.fail
+            warnings += messages.warning
+
+            messages = check_exceptions(name)
+            errors += messages.fail
+            warnings += messages.warning
+
+            messages = check_protected(name)
+            errors += messages.fail
+            warnings += messages.warning
+
+    fail_message = None
+    if errors:
+        fail_message = f"Found the following errors in the field names:\n\t- {'\n\t- '.join(filter(None, errors))}"
+
+    warning_message = None
+    if warnings:
+        warning_message = f"Found the following warnings in the field names:\n\t- {'\n\t- '.join(filter(None, warnings))}"
+
+    if fail_message:
+        return Status.failed(fail_message, warning_message)
+
+    if warning_message:
+        return Status.warned(warning_message)
+
+    return Status.passed()

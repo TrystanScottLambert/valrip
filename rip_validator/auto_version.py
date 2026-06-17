@@ -246,7 +246,10 @@ def get_rip_version_info(
             table_name = maml_content["table"]
             parquet_filename = maml_filename.replace(".maml", ".parquet")
             parquet_path = directory / parquet_filename
-            local_sum = sha1_checksum(parquet_path)
+            if not parquet_path.exists():
+                local_sum = ""
+            else:
+                local_sum = sha1_checksum(parquet_path)
 
             last = history.last_seen(table_name, parquet_filename)
             if last is None:

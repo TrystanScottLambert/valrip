@@ -2,7 +2,7 @@
 Module for storing the Status and error handling data structures
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Self
 
@@ -28,7 +28,8 @@ def output_state(state: State) -> str:
 @dataclass
 class Status:
     state: State
-    message: str | None = None
+    fail_message: str | None = None
+    warning_message: str | None = None
 
     def output(self) -> str:
         match self.state:
@@ -40,19 +41,23 @@ class Status:
                 return f"{ANSI.YELLOW}⚠ WARNING{ANSI.RESET}"
 
     @classmethod
-    def failed(cls, message: str) -> Self:
+    def failed(cls, fail_message: str, warn_message: str | None = None) -> Self:
         """Helper function to make creating failed statuses easier."""
-        return cls(State.FAIL, message)
+        return cls(State.FAIL, fail_message, warn_message)
 
     @classmethod
-    def passed(cls, message: str | None = None) -> Self:
+    def passed(cls) -> Self:
         """Helper function to make passed status easier."""
-        return cls(State.PASS, message)
+        return cls(State.PASS)
 
     @classmethod
-    def warned(cls, message: str) -> Self:
+    def warned(cls, warn_message: str, fail_message: str | None = None) -> Self:
+        if warn_message is None:
+            raise ValueError(
+                "No warn_message provided, failed statuses require a warn_message."
+            )
         """Helper method for building warning Statuses"""
-        return cls(State.WARNING, message)
+        return cls(State.WARNING, fail_message, warn_message)
 
     @property
     def is_fail(self) -> bool:
@@ -70,3 +75,15 @@ class Status:
     def is_passable(self) -> bool:
         """True for PASS or WARNING. Useful for cases where we need to only catch failures."""
         return self.state != State.FAIL
+
+
+@dataclass
+class Messages:
+    fail: list[str] = field(default_factory=list)
+    warning: list[str] = field(default_factory=list)
+
+    def add_fail(self, fail: str) -> None:
+        self.fail.append(fail)
+
+    def add_warning(self, warning: str) -> None:
+        self.warning.append(warning)

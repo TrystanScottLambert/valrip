@@ -13,21 +13,27 @@ class Report:
     CHECK_LABELS: ClassVar[dict[str, str]] = {}
     TITLE: ClassVar[str] = "Validation Report"
 
-    def _status_fields(self) -> list[tuple[str, "Status"]]:
+    def _status_fields(
+        self, return_label: bool = False
+    ) -> list[Status] | list[tuple[str, Status]]:
         """Yield (label, Status) for each check field declared in CHECK_LABELS."""
-        return [
-            (self.CHECK_LABELS[name], getattr(self, name)) for name in self.CHECK_LABELS
-        ]
+        if return_label:
+            return [
+                (self.CHECK_LABELS[name], getattr(self, name))
+                for name in self.CHECK_LABELS
+            ]
+        else:
+            return [getattr(self, name) for name in self.CHECK_LABELS]
 
     @property
     def is_valid(self) -> bool:
-        if any(status.is_fail for _, status in self._status_fields()):
+        if any(status and status.is_fail for status in self._status_fields()):
             return False
         return True
 
     @property
     def has_warnings(self) -> bool:
-        return any(status.is_warn for _, status in self._status_fields())
+        return any(status and status.is_warn for status in self._status_fields())
 
     def print_report(self, verbose: bool = False) -> None:
         is_valid = self.is_valid
@@ -51,17 +57,19 @@ class Report:
 
         print(f"\n{ANSI.BOLD}Validation Checks:{ANSI.RESET}")
         print("-" * 80)
-        for label, status in self._status_fields():
-            if status.is_pass and not verbose:
-                continue
+        for label, status in self._status_fields(return_label=True):
+            if status:
+                if status.is_pass and not verbose:
+                    continue
 
-            if status.is_fail and status.message:
-                detail = f"\n     {ANSI.RED} → {status.message}{ANSI.RESET}"
-            elif status.is_warn and status.message:
-                detail = f"\n     {ANSI.YELLOW} → {status.message}{ANSI.RESET}"
-            else:
                 detail = ""
+                if status.fail_message:
+                    detail += f"\n     {ANSI.RED} → {status.fail_message}{ANSI.RESET}"
+                if status.warning_message:
+                    detail += (
+                        f"\n     {ANSI.YELLOW} → {status.warning_message}{ANSI.RESET}"
+                    )
 
-            padded = label.ljust(WHITESPACE_PADDING_LENGTH)
-            print(f"  {padded:<45} {status.output()}{detail}")
+                padded = label.ljust(WHITESPACE_PADDING_LENGTH)
+                print(f"  {padded:<45} {status.output()}{detail}")
         print("-" * 80)

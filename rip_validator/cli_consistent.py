@@ -15,10 +15,10 @@ def validate_maml_and_parquet(file_name: str, quiet=False, verbose=False):
     This involves validating both the MAML file and the Parquet
     file individually, before validating their consistency.
     """
-    parquet_file = Path(file_name + ".parquet")
+    parquet_file = Path(f"{file_name}.parquet")
     data = read_and_validate_parquet(parquet_file, quiet, verbose)
 
-    maml_file = Path(file_name + ".maml")
+    maml_file = Path(f"{file_name}.maml")
     maml = read_and_validate_maml(maml_file, quiet, verbose)
 
     if maml:
