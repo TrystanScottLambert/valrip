@@ -139,7 +139,7 @@ def check_snake_case(name: str) -> Messages:
     for exception in exceptions:
         actual_string = actual_string.replace(exception.name, "")
 
-    if not actual_string.islower():
+    if not actual_string.islower() and actual_string != "":
         messages.add_fail(
             f"{name} is not snake_case (should be all lowercase, except for known exceptions)."
         )
