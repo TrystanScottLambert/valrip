@@ -32,6 +32,10 @@ valrip login gitlab
 valrip login owncloud
 ```
 
+You can also see what values you have stored with the `valrip login show` command. This will *hide* the passwords and tokens that have been stored but this can also been shown with `valrip login show --show-secrets`. 
+
+**You can also validate that your credentials will work when you submit your rip!** `valrip login check` will make sure that your stored credentials are valid. You should do this before you submit your work.
+
 # Installation
 
 `valrip` is distributed as precompiled binaries for macOS and Linux.
