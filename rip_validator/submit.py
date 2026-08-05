@@ -9,10 +9,13 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
+from urllib.parse import quote
 
 import keyring
+import requests
 
 from .owncloud_utils import (
+    FileChecksums,
     download_trackable_data,
     get_metadata_from_prerip,
     list_all_qc,
@@ -23,6 +26,14 @@ from .settings_config import QC_LEAD_USER_NAME, RIP_DIRECTORY_NAME
 from .WAVES_config import ANSI
 
 _VERSION_DIR_RE = re.compile(r"^v(\d+)$")
+
+GITLAB_HOST = "dev.aao.org.au"
+GITLAB_API_URL = f"https://{GITLAB_HOST}/api/v4"
+GITLAB_GROUP_PATH = "waves/twg6"
+CREDENTIAL_CHECK_TIMEOUT = 10.0
+
+# Anything below Developer cannot push a branch, so it cannot submit.
+DEVELOPER_ACCESS_LEVEL = 30
 
 
 @dataclass
@@ -68,6 +79,77 @@ def get_gitlab_credentials() -> GitLabCredentials:
     username = keyring.get_password("valrip", "gitlab_username")
 
     return GitLabCredentials(token=token, email=email, username=username)
+
+
+def gitlab_project_path(rip_directory_name: str = RIP_DIRECTORY_NAME) -> str:
+    """
+    The full GitLab path of the repo that `submit` pushes to.
+    """
+    return f"{GITLAB_GROUP_PATH}/{rip_directory_name}"
+
+
+def gitlab_clone_url(token: str, rip_directory_name: str = RIP_DIRECTORY_NAME) -> str:
+    """
+    The authenticated clone URL that `submit` pushes through.
+    """
+    return f"https://oauth2:{token}@{GITLAB_HOST}/{gitlab_project_path(rip_directory_name)}.git"
+
+
+def _gitlab_get(
+    endpoint: str, token: str, timeout: float = CREDENTIAL_CHECK_TIMEOUT, **params
+) -> requests.Response:
+    """
+    A read-only GitLab API call, authenticated with the git-bot token.
+
+    Never raises for status: every caller here cares about the status code
+    itself, since it is what tells the failure modes apart.
+    """
+    return requests.get(
+        f"{GITLAB_API_URL}/{endpoint}",
+        headers={"PRIVATE-TOKEN": token},
+        params=params,
+        timeout=timeout,
+    )
+
+
+def probe_gitlab_token(token: str) -> requests.Response:
+    """
+    Asks GitLab who this token belongs to.
+
+      200 - the token is live.
+      401 - the token is wrong, expired or revoked.
+
+    Assumes the WAVES git-bot tokens are issued with `api` scope, which is what
+    lets valrip check them at all.
+    """
+    return _gitlab_get("user", token)
+
+
+def probe_gitlab_token_metadata(token: str) -> requests.Response:
+    """
+    The token's own scopes and expiry date. Not available on every GitLab
+    version, so a 404 here means unknown rather than broken.
+    """
+    return _gitlab_get("personal_access_tokens/self", token)
+
+
+def probe_gitlab_project(token: str, project_path: str) -> requests.Response:
+    """
+    Asks whether this token can reach a project, and with what access level.
+
+    GitLab returns 404 rather than 403 for a project the token cannot see, so
+    a 404 means 'no access', not 'no such repo'. A token bound to a different
+    project (a testing token, say) fails here exactly like a revoked one.
+    """
+    return _gitlab_get(f"projects/{quote(project_path, safe='')}", token)
+
+
+def probe_gitlab_user(token: str, username: str) -> requests.Response:
+    """
+    Looks up a GitLab account by username. The response body is a list, empty
+    when no such account exists.
+    """
+    return _gitlab_get("users", token, username=username)
 
 
 def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -157,10 +239,8 @@ def push_to_gitlab(
     if not credentials:
         credentials = get_gitlab_credentials()
 
-    directory = (
-        f"https://oauth2:{credentials.token}"
-        f"@dev.aao.org.au/waves/twg6/{rip_directory_name}.git"
-    )
+    assert credentials.token
+    directory = gitlab_clone_url(credentials.token, rip_directory_name)
 
     git_env = {
         **os.environ,
@@ -243,7 +323,8 @@ def submit_owncloud_metadata_to_gitlab(prerip_name: str) -> None:
     Full submission pipeline:
 
     1. Log in to Data Central.
-    2. Pull metadata + SHA1 checksums for every file in the pre-rip dir.
+    2. Pull metadata + checksums for every file in the pre-rip dir. Parquet
+       files get the xxh hash from their footer, everything else a SHA1.
     3. Validate those checksums against the `{prerip_name}.checksums` sidecar.
        Exits if the sidecar is missing or any file mismatches / is missing /
        is extra.
@@ -262,7 +343,8 @@ def submit_owncloud_metadata_to_gitlab(prerip_name: str) -> None:
         return
 
     computed_checksums = {
-        row["file_name"]: row["sha1"] for row in meta_data if row.get("sha1")
+        row["file_name"]: FileChecksums(sha1=row.get("sha1"), xxh=row.get("xxh"))
+        for row in meta_data
     }
     validate_checksums(prerip_name, computed_checksums)
 

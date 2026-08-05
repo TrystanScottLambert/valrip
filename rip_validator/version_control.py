@@ -7,7 +7,7 @@ import httpx
 from rip_validator import __version__
 from .WAVES_config import ANSI
 
-GIT_HUB_URL = "https://github.com/TrystanScottLambert/valrip"
+GIT_HUB_URL = "https://api.github.com/repos/TrystanScottLambert/valrip/releases/latest"
 
 
 def get_latest_version() -> Optional[str]:
@@ -15,8 +15,12 @@ def get_latest_version() -> Optional[str]:
     Scrapes the latest tagged version on github.
     """
     try:
-        page = httpx.request("GET", GIT_HUB_URL)
-        return page.text.split("max-width: none;")[1].split("</span>")[0].split("v")[-1]
+        page = httpx.get(
+            GIT_HUB_URL,
+            headers={"Accept": "application/vnd.github+json"},
+            follow_redirects=True,
+        )
+        return page.json()["tag_name"].lstrip("v")
     except Exception as e:
         print(
             f"{ANSI.YELLOW}Warning: Unable to check latest version. \n {e}{ANSI.RESET}"

@@ -156,6 +156,37 @@ def login_owncloud(user, password, all_creds):
     login_owncloud(user, password, all_creds)
 
 
+@login.command(name="show")
+@click.option(
+    "--show-secrets",
+    "-s",
+    is_flag=True,
+    help="Print the token and password in plain text instead of masking them.",
+)
+def login_show(show_secrets):
+    """Print all the credentials that are currently being used."""
+    from .store_credentials import show_credentials
+
+    show_credentials(show_secrets)
+
+
+@login.command(name="check")
+def login_check():
+    """Check that the stored credentials actually work.
+
+    Data Central credentials are tested against Data Central itself. The
+    GitLab git-bot token cannot be verified by valrip, so it is only ever
+    reported as unchecked. Exits non-zero if a credential is missing or known
+    to be wrong.
+    """
+    import sys
+
+    from .store_credentials import check_credentials
+
+    if not check_credentials():
+        sys.exit(1)
+
+
 @click.command(name="directory")
 @click.argument(
     "directory",

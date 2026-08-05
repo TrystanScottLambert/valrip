@@ -13,15 +13,29 @@ from pathlib import Path
 
 import yaml
 
+from .owncloud_utils import FileChecksums
 from .settings_config import RIP_DIRECTORY_NAME
 from .submit import get_gitlab_credentials, run
+from .WAVES_config import ANSI
+from .xxh_waves import NO_XXH, XXH_KEYWORD, calculate_hash
 
 _VERSION_DIR_RE = re.compile(r"^v(\d+)$")
+
+# RIPs published before the xxh hash existed fall back to sha1; see
+# _is_pre_xxh. By this date every RIP must have been re-published at least
+# once, and the fallback can go.
+SHA1_FALLBACK_REMOVAL = "August 2027"
 
 
 @dataclass
 class TableVersion:
-    """Versioning info for a single table (parquet file)."""
+    """Versioning info for a single table (parquet file).
+
+    The checksums are normally WAVES xxh hashes, which cover the data bytes
+    only, so that writing the hash into the footer does not itself change the
+    hash. Tables last published before that hash existed are compared on sha1
+    instead; both sides always use the same algorithm.
+    """
 
     name: str
     local_checksum: str
@@ -105,20 +119,24 @@ def sha1_checksum(file_name: Path) -> str:
         return sha1_hash.hexdigest()
 
 
-def _parse_checksums(text: str) -> dict[str, str]:
-    """Parse a .checksums file into {filename: sha1}."""
-    out: dict[str, str] = {}
+def _parse_checksums(text: str) -> dict[str, FileChecksums]:
+    """Parse a .checksums file into {filename: FileChecksums}.
+
+    Data lines are ``filename: sha1: xxh``, where the xxh field is ``NO_XXH``
+    for everything that isn't a parquet file. Sidecars published before the
+    xxh hash existed carry only ``filename: sha1`` and come back with no xxh
+    at all.
+    """
+    out: dict[str, FileChecksums] = {}
     for raw_line in text.splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("#"):
+        if not line or ":" not in line or line.startswith("#"):
             continue
-        if ":" not in line:
-            continue
-        name, _, checksum = line.partition(":")
-        name = name.strip()
-        checksum = checksum.strip()
-        if name and checksum:
-            out[name] = checksum
+        fields = [field.strip() for field in line.split(":")]
+        name, sha1_sum = fields[0], fields[1]
+        xxh = fields[2] if len(fields) > 2 else NO_XXH
+        if name and sha1_sum:
+            out[name] = FileChecksums(sha1=sha1_sum, xxh=None if xxh == NO_XXH else xxh)
     return out
 
 
@@ -134,7 +152,7 @@ def _parse_daml_table_versions(text: str) -> dict[str, int]:
 class _VersionSnapshot:
     """What one remote ``vN`` looks like for a RIP."""
 
-    checksums: dict[str, str]  # {filename: sha1}
+    checksums: dict[str, FileChecksums]  # {filename: checksums}
     table_versions: dict[str, int]  # {table_name: version}
 
 
@@ -172,18 +190,18 @@ class _RemoteHistory:
 
     def last_seen(
         self, table_name: str, parquet_filename: str
-    ) -> tuple[str, int] | None:
+    ) -> tuple[FileChecksums, int] | None:
         """
-        Return ``(checksum, table_version)`` for the most recent ``vN``
+        Return ``(checksums, table_version)`` for the most recent ``vN``
         that contained this table, or ``None`` if the table has never
         appeared on main.
         """
         for v in self._versions_desc:
             snap = self._snapshot(v)
-            remote_sum = snap.checksums.get(parquet_filename)
+            remote_sums = snap.checksums.get(parquet_filename)
             remote_ver = snap.table_versions.get(table_name)
-            if remote_sum is not None and remote_ver is not None:
-                return remote_sum, remote_ver
+            if remote_sums is not None and remote_ver is not None:
+                return remote_sums, remote_ver
         return None
 
 
@@ -218,6 +236,29 @@ class _TempClone:
             shutil.rmtree(self._tmp, ignore_errors=True)
 
 
+def _is_pre_xxh(remote_sums: FileChecksums | None) -> bool:
+    """Was this table last published before parquet files carried an xxh hash?
+
+    Such a table has only a sha1 in its published sidecar, so that is the only
+    thing the local file can be compared against.
+    """
+    return remote_sums is not None and not remote_sums.xxh
+
+
+def _warn_sha1_fallback(table_names: list[str]) -> None:
+    """Tell the user which tables were versioned on the deprecated sha1."""
+    named = ", ".join(f"'{name}'" for name in sorted(set(table_names)))
+    print(
+        f"{ANSI.YELLOW}{ANSI.BOLD}DEPRECATION WARNING:{ANSI.RESET}{ANSI.YELLOW} "
+        f"the last published version of {named} predates the '{XXH_KEYWORD}' hash, so "
+        f"the version comparison fell back to sha1. sha1 covers the whole file, so "
+        f"such a table takes one extra version bump once the '{XXH_KEYWORD}' hash is "
+        f"written into its footer; that is expected. The sha1 fallback will be removed "
+        f"in {SHA1_FALLBACK_REMOVAL}, by which point every RIP must have been "
+        f"published at least once with an '{XXH_KEYWORD}' hash.{ANSI.RESET}"
+    )
+
+
 def get_next_version(rip_name: str) -> int:
     """
     Return the next RIP-level version integer.
@@ -234,6 +275,10 @@ def get_rip_version_info(
 ) -> RipVersion:
     """
     Compute next versions for a RIP and all its tables.
+
+    Tables are compared on their xxh hash, or on sha1 for the RIPs that were
+    published before that hash existed. Mixing the two is never allowed: the
+    algorithm is picked per table from what its last published version holds.
     """
     directory = Path(directory)
 
@@ -242,20 +287,33 @@ def get_rip_version_info(
         latest = history.latest_version
 
         tables: list[TableVersion] = []
+        sha1_fallbacks: list[str] = []
         for maml_filename, maml_content in sorted(maml_data.items()):
             table_name = maml_content["table"]
             parquet_filename = maml_filename.replace(".maml", ".parquet")
             parquet_path = directory / parquet_filename
-            if not parquet_path.exists():
-                local_sum = ""
-            else:
-                local_sum = sha1_checksum(parquet_path)
 
             last = history.last_seen(table_name, parquet_filename)
             if last is None:
-                remote_sum, remote_ver = None, None
+                remote_sums, remote_ver = None, None
             else:
-                remote_sum, remote_ver = last
+                remote_sums, remote_ver = last
+
+            use_sha1 = _is_pre_xxh(remote_sums)
+            if use_sha1:
+                sha1_fallbacks.append(table_name)
+
+            if not parquet_path.exists():
+                local_sum = ""
+            elif use_sha1:
+                local_sum = sha1_checksum(parquet_path)
+            else:
+                local_sum = calculate_hash(parquet_path)
+
+            if remote_sums is None:
+                remote_sum = None
+            else:
+                remote_sum = remote_sums.sha1 if use_sha1 else remote_sums.xxh
 
             tables.append(
                 TableVersion(
@@ -265,6 +323,9 @@ def get_rip_version_info(
                     remote_version=remote_ver,
                 )
             )
+
+    if sha1_fallbacks:
+        _warn_sha1_fallback(sha1_fallbacks)
 
     next_rip_version = (latest + 1) if latest is not None else 1
 

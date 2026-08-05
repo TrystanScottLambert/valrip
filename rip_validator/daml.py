@@ -25,6 +25,7 @@ from .helper_validator_methods import (
     validate_coauthors,
     validate_date,
     validate_description,
+    validate_dois,
     validate_license,
     validate_survey,
     validate_order,
@@ -38,7 +39,7 @@ DAML_ORDER = [
     "date",
     "author",
     "coauthors",
-    "dois",
+    "DOIs",
     "description",
     "comments",
     "license",
@@ -65,6 +66,7 @@ class DAMLReport(Report):
     dataset: Status
     author: Status
     coauthors: Status
+    DOIs: Status
     date: Status
     description: Status
     license: Status
@@ -80,6 +82,7 @@ class DAMLReport(Report):
         "dataset": "Dataset name is the same as RIP name:",
         "author": "Author is correctly formatted:",
         "coauthors": "Coauthors are correctly formatted:",
+        "DOIs": "DOIs are valid:",
         "date": "Date valid iso format:",
         "description": "Valid description of RIP:",
         "license": "License:",
@@ -166,7 +169,7 @@ class PreDAML:
     dataset: str
     author: str
     coauthors: list[str] | None
-    dois: list[str] | None
+    DOIs: list[dict] | None
     comments: list[str] | None
     keywords: list[str] | None
     ancillary: str | None
@@ -183,6 +186,7 @@ class PreDAML:
             dataset=_validate_dataset(self.dataset, rip_name),
             author=validate_author(self.author),
             coauthors=validate_coauthors(self.coauthors),
+            DOIs=validate_dois(self.DOIs),
             date=validate_date(self.date),
             description=validate_description(self.description),
             license=validate_license(self.license),
@@ -201,9 +205,9 @@ class PreDAML:
             dataset=_get_dataset(maml_data),
             author=_get_author(maml_data),
             coauthors=_get_coauthors(maml_data),
+            DOIs=_get_dois(maml_data),
             tables=_get_tables(maml_data),
             version=get_next_version(rip_name),
-            dois=None,
             comments=None,
             keywords=None,
             ancillary=None,
@@ -291,6 +295,22 @@ def _get_coauthors(maml_data: dict[str, dict]) -> list[str] | None:
     if not coauthors:
         return None
     return coauthors
+
+
+def _get_dois(maml_data: dict[str, dict]) -> list[dict] | None:
+    """Scrapes the maml data and concatenates all DOIs.
+
+    A DOI is a nested {'DOI': ..., 'type': ...} object rather than a plain
+    string, so _unique_list can't be used here — dicts aren't hashable.
+    """
+    dois: list[dict] = []
+    for data in maml_data.values():
+        for doi in data.get("DOIs") or []:
+            if doi not in dois:
+                dois.append(doi)
+    if not dois:
+        return None
+    return dois
 
 
 def _get_tables(maml_data: dict[str, dict]) -> list[dict[str, int]]:

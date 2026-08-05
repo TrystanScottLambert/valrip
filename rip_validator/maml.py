@@ -23,6 +23,7 @@ from .helper_validator_methods import (
     validate_coauthors,
     validate_date,
     validate_description,
+    validate_dois,
     validate_empty_optionals,
     validate_license,
     validate_order,
@@ -76,7 +77,6 @@ MAML_REQUIRED = [
     "fields",
 ]
 
-DOI_ALLOWED_KEYS = {"DOI", "type"}
 DEPENDS_ALLOWED_KEYS = {"survey", "dataset", "table", "version"}
 FIELD_ALLOWED_KEYS = {"name", "unit", "info", "ucd", "data_type", "qc"}
 QC_ALLOWED_KEYS = {"min", "max"}
@@ -184,34 +184,6 @@ def _validate_maml_version(MAML_version: float) -> Status:
     if MAML_version != MAML_VERSION:
         return Status.failed(
             f"MAML_version should be {MAML_VERSION}, got {MAML_version}."
-        )
-    return Status.passed()
-
-
-@optional_list("DOIs")
-def _validate_dois(DOIs: list[dict] | None) -> Status:
-    """DOIs is optional — None passes. If present, must be a non-empty list
-    of dicts each with non-empty 'DOI' and 'type' fields."""
-
-    errors = []
-    for i, doi in enumerate(DOIs, start=1):
-        if not doi:
-            errors.append(f"DOIs[{i}]: entry is empty.")
-            continue
-        if not isinstance(doi, dict):
-            errors.append(f"DOIs[{i}]: must be a DOI object.")
-            continue
-        if not doi.get("DOI"):
-            errors.append(f"DOIs[{i}]: 'DOI' field is required.")
-        if not doi.get("type"):
-            errors.append(f"DOIs[{i}]: 'type' field is required.")
-        extras = set(doi.keys()) - DOI_ALLOWED_KEYS
-        if extras:
-            errors.append(f"DOIs[{i}]: unexpected fields {sorted(extras)}.")
-
-    if errors:
-        return Status.failed(
-            f"'DOIs' has the following errors:\n\t- {'\n\t- '.join(errors)}"
         )
     return Status.passed()
 
@@ -513,7 +485,7 @@ class PreMAML:
             date=validate_date(self.date),
             author=validate_author(self.author),
             coauthors=validate_coauthors(self.coauthors),
-            DOIs=_validate_dois(self.DOIs),
+            DOIs=validate_dois(self.DOIs),
             depends=_validate_depends(self.depends),
             description=validate_description(self.description),
             comments=_validate_comments(self.comments),

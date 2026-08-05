@@ -5,20 +5,31 @@ Module for interfacing with the Data Central cloud space. Data Central implement
 import os
 import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 import keyring
 import maskpass
 import owncloud
+import polars as pl
 import requests
 
+from .footer_handler import MAGIC, TAIL_SIZE
 from .WAVES_config import ANSI
+from .xxh_waves import NO_XXH, XXH_KEYWORD
 
 QC_PATH = "./WAVES/QC/"
 RIP_PATH = "./WAVES/RIPs/"
 DATA_CENTRAL_URL = "https://cloud.datacentral.org.au"
+CREDENTIAL_CHECK_TIMEOUT = 10.0
 oc = owncloud.Client(DATA_CENTRAL_URL)
+
+
+@dataclass
+class FileChecksums:
+    sha1: str | None = None
+    xxh: str | None = None
 
 
 @dataclass
@@ -90,21 +101,170 @@ def _parse_checksum_response(response: str) -> dict:
     return checksum_dict
 
 
-def calculate_checksums_from_dc(directory: str, files: list[str]) -> dict:
+def dav_root_url(username: str) -> str:
     """
-    Manually streams the given files into the sha1sum function. This comes pre-installed in
-    nearly all linux distros and on mac. Curl is also preinstalled on mac and linux.
+    The WebDAV root of a Data Central user's own storage.
+    """
+    return f"{DATA_CENTRAL_URL}/remote.php/dav/files/{username}"
+
+
+def _dav_url(username: str, directory: str, filename: str) -> str:
+    directory = directory.strip("/").removeprefix("./").strip("/")
+    return f"{dav_root_url(username)}/{directory}/{filename}"
+
+
+def probe_data_central_auth(
+    username: str, password: str, timeout: float = CREDENTIAL_CHECK_TIMEOUT
+) -> int:
+    """
+    Asks Data Central whether these credentials authenticate, returning the raw
+    HTTP status code so that the caller can tell the failure modes apart:
+
+      207 - authenticated, the storage is there.
+      401 - rejected. Wrong username or password, or the account needs an app
+            password because it has two-factor authentication enabled.
+      404 - authenticated, but the account has no storage under this username,
+            which means the stored username does not match the account.
+
+    Raises `requests.RequestException` if Data Central cannot be reached at all,
+    which says nothing about whether the credentials are any good.
+    """
+    response = requests.request(
+        "PROPFIND",
+        f"{dav_root_url(username)}/",
+        auth=(username, password),
+        headers={"Depth": "0"},
+        timeout=timeout,
+    )
+    return response.status_code
+
+
+def _get_remote_file_size(url: str, auth: tuple[str, str]) -> int:
+    """
+    The size of a remote file in bytes, taken from the HEAD response.
+    """
+    response = requests.head(url, auth=auth, allow_redirects=True)
+    response.raise_for_status()
+    if "Content-Length" not in response.headers:
+        raise RuntimeError("No Content-Length on HEAD; cannot locate the footer.")
+    return int(response.headers["Content-Length"])
+
+
+def _get_remote_byte_range(
+    url: str, start: int, end: int, auth: tuple[str, str]
+) -> bytes:
+    """
+    Fetches the bytes [start, end] (inclusive) of a remote file. Bails out if
+    the server ignores the Range header, since the body would then be the
+    entire file.
+    """
+    headers = {"Range": f"bytes={start}-{end}"}
+    with requests.get(url, auth=auth, headers=headers, stream=True) as response:
+        response.raise_for_status()
+        if response.status_code != 206:
+            raise RuntimeError(
+                f"Server ignored the Range header (returned {response.status_code}); "
+                "cannot read the footer remotely."
+            )
+        return response.content
+
+
+def _fetch_parquet_footer(url: str, auth: tuple[str, str]) -> tuple[int, bytes]:
+    """
+    Returns the (file size, footer bytes) of a remote parquet file using two
+    small range requests. A parquet file is laid out as
+    `PAR1 <data> <thrift FileMetaData> <4-byte LE footer length> PAR1`.
+    """
+    size = _get_remote_file_size(url, auth)
+    tail = _get_remote_byte_range(url, size - TAIL_SIZE, size - 1, auth)
+    if tail[-len(MAGIC) :] != MAGIC:
+        raise ValueError("Not a parquet file. Missing the magic PAR1 keyword.")
+    footer_len = int.from_bytes(tail[:4], "little")
+    footer = _get_remote_byte_range(url, size - TAIL_SIZE - footer_len, size - 1, auth)
+    return size, footer
+
+
+def _sparse_parquet_stub(size: int, footer: bytes) -> str:
+    """
+    Writes a sparse local file of `size` bytes containing only the leading
+    magic and the footer, so that a parquet reader can open it. The hole in
+    the middle costs essentially no disk. Returns the path of the stub, which
+    is the caller's job to delete.
+    """
+    file_descriptor, path = tempfile.mkstemp(suffix=".parquet")
+    with os.fdopen(file_descriptor, "r+b") as stub:
+        stub.truncate(size)
+        stub.write(MAGIC)
+        stub.seek(size - len(footer))
+        stub.write(footer)
+    return path
+
+
+def read_remote_parquet_metadata(url: str, auth: tuple[str, str]) -> dict[str, str]:
+    """
+    Reads the key-value metadata out of the footer of a remote parquet file
+    without downloading the file itself.
+    """
+    size, footer = _fetch_parquet_footer(url, auth)
+    stub_path = _sparse_parquet_stub(size, footer)
+    try:
+        return pl.read_parquet_metadata(stub_path)
+    finally:
+        os.unlink(stub_path)
+
+
+def get_xxh_checksums_from_dc(
+    directory: str, files: list[str]
+) -> dict[str, str | None]:
+    """
+    Reads the WAVES xxh checksum out of the footer of each of the given remote
+    parquet files. Only the footer is fetched, so nothing is downloaded. Files
+    whose footer cannot be read, or which carry no xxh checksum, come back as
+    `None`.
     """
     dc_credentials = get_data_central_credentials()
     assert dc_credentials.password
     assert dc_credentials.username
 
-    base_url = f"https://cloud.datacentral.org.au/remote.php/dav/files/{dc_credentials.username}"
+    auth = (dc_credentials.username, dc_credentials.password)
+    checksums: dict[str, str | None] = {}
+
+    for filename in files:
+        url = _dav_url(dc_credentials.username, directory, filename)
+        print(f"Reading the '{XXH_KEYWORD}' checksum from the footer of '{filename}'.")
+        try:
+            metadata = read_remote_parquet_metadata(url, auth)
+        except (requests.RequestException, RuntimeError, ValueError, OSError) as err:
+            print(
+                f"{ANSI.RED}Could not read the footer of '{filename}': {err}{ANSI.RESET}"
+            )
+            checksums[filename] = None
+            continue
+        checksums[filename] = metadata.get(XXH_KEYWORD)
+
+    return checksums
+
+
+def calculate_checksums_from_dc(directory: str, files: list[str]) -> dict:
+    """
+    Manually streams the given files into the sha1sum function. This comes pre-installed in
+    nearly all linux distros and on mac. Curl is also preinstalled on mac and linux.
+
+    Parquet files are never streamed. They are validated with the xxh hash in
+    their footer (see `get_xxh_checksums_from_dc`), so pulling them down would
+    be a large download for nothing.
+    """
+    dc_credentials = get_data_central_credentials()
+    assert dc_credentials.password
+    assert dc_credentials.username
 
     checksums = {}
 
     for filename in files:
-        url = f"{base_url}/{directory}/{filename}"
+        if filename.endswith(".parquet"):
+            continue
+
+        url = _dav_url(dc_credentials.username, directory, filename)
         print(f"Hashing '{filename}': ")
 
         result = subprocess.run(
@@ -169,46 +329,71 @@ def get_checksums_from_dc(directory: str) -> dict:
     return checksums
 
 
-def get_checksums(directory: str) -> dict[str, str]:
+def get_checksums(directory: str) -> dict[str, FileChecksums]:
     """
-    Gets SHA1 checksums for all files in a directory. First tries to fetch them
-    from OwnCloud's stored checksums via PROPFIND. Any files missing checksums
-    are then calculated manually by streaming through sha1sum.
-    """
-    checksums = get_checksums_from_dc(directory)
+    Gets the checksums of every file in a directory.
 
-    missing = [f for f, sha1 in checksums.items() if sha1 is None]
+    Parquet files are checksummed with the WAVES xxh hash stored in their
+    footer, which is read remotely without downloading the file. Everything
+    else uses SHA1: first OwnCloud's own stored checksums via PROPFIND, and
+    then, for whatever is still missing, a manual stream through sha1sum.
+    """
+    sha1s = get_checksums_from_dc(directory)
+
+    parquet_files = [name for name in sha1s if name.endswith(".parquet")]
+    missing = [
+        name
+        for name, sha1 in sha1s.items()
+        if sha1 is None and not name.endswith(".parquet")
+    ]
 
     if missing:
         print(f"{len(missing)} file(s) missing checksums, calculating manually...")
-        calculated = calculate_checksums_from_dc(directory, missing)
-        checksums.update(calculated)
+        sha1s.update(calculate_checksums_from_dc(directory, missing))
 
-    return checksums
+    xxhs = get_xxh_checksums_from_dc(directory, parquet_files) if parquet_files else {}
+
+    return {
+        name: FileChecksums(sha1=sha1s.get(name), xxh=xxhs.get(name)) for name in sha1s
+    }
 
 
-def _parse_checksums_file(contents: str) -> dict[str, str]:
+def _parse_checksums_file(contents: str) -> dict[str, FileChecksums]:
     """
     Parses the contents of a `{prerip}.checksums` file produced by
     `valrip directory`. Lines starting with '#' are comments. Each data line
-    is of the form `filename: sha1hash`.
+    is of the form `filename: sha1hash: xxhhash`, where the xxh hash is '0'
+    for everything that isn't a parquet file. Sidecars written before the xxh
+    hash existed carry only `filename: sha1hash`.
     """
-    expected: dict[str, str] = {}
+    expected: dict[str, FileChecksums] = {}
     for raw_line in contents.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
-        if ":" not in line:
+        fields = [field.strip() for field in line.split(":")]
+        if len(fields) < 2:
             continue
-        filename, sha1 = line.split(":", 1)
-        expected[filename.strip()] = sha1.strip()
+        filename, sha1 = fields[0], fields[1]
+        xxh = fields[2] if len(fields) > 2 else NO_XXH
+        if not filename or not sha1:
+            continue
+        expected[filename] = FileChecksums(
+            sha1=sha1, xxh=None if xxh == NO_XXH else xxh
+        )
     return expected
 
 
-def validate_checksums(prerip_name: str, computed: dict[str, str]) -> dict[str, str]:
+def validate_checksums(
+    prerip_name: str, computed: dict[str, FileChecksums]
+) -> dict[str, FileChecksums]:
     """
-    Compares the SHA1 checksums computed from the cloud directory against the
+    Compares the checksums computed from the cloud directory against the
     `{prerip_name}.checksums` sidecar file in the same QC directory.
+
+    Parquet files are compared on their WAVES xxh hash, which is stored in the
+    parquet footer; a parquet file without an xxh hash on either side fails.
+    Every other file is compared on its SHA1.
 
     The sidecar must exist. If it does not, this function prints an error and
     calls `sys.exit()` — nothing should be submitted to GitLab without it.
@@ -237,7 +422,7 @@ def validate_checksums(prerip_name: str, computed: dict[str, str]) -> dict[str, 
 
     # The sidecar does not list itself, so drop it
     computed_for_compare = {
-        name: sha1 for name, sha1 in computed.items() if name != sidecar_name
+        name: checksums for name, checksums in computed.items() if name != sidecar_name
     }
 
     expected_names = set(expected)
@@ -245,24 +430,49 @@ def validate_checksums(prerip_name: str, computed: dict[str, str]) -> dict[str, 
 
     missing_from_cloud = sorted(expected_names - computed_names)
     extra_in_cloud = sorted(computed_names - expected_names)
-    mismatched = sorted(
-        name
-        for name in expected_names & computed_names
-        if expected[name] != computed_for_compare[name]
-    )
 
-    if missing_from_cloud or extra_in_cloud or mismatched:
+    mismatched: list[tuple[str, str, str, str]] = []
+    missing_xxh: list[str] = []
+    for name in sorted(expected_names & computed_names):
+        if name.endswith(".parquet"):
+            algorithm = XXH_KEYWORD
+            expected_hash = expected[name].xxh
+            actual_hash = computed_for_compare[name].xxh
+            if not expected_hash or not actual_hash:
+                missing_xxh.append(name)
+                continue
+        else:
+            algorithm = "SHA1"
+            expected_hash = expected[name].sha1
+            actual_hash = computed_for_compare[name].sha1
+        if expected_hash != actual_hash:
+            mismatched.append(
+                (name, algorithm, expected_hash or "<none>", actual_hash or "<none>")
+            )
+
+    if missing_from_cloud or extra_in_cloud or mismatched or missing_xxh:
         print(
             f"{ANSI.RED}ERROR: Checksum validation failed for '{prerip_name}'.{ANSI.RESET}"
         )
         if mismatched:
-            print(f"\n{ANSI.BOLD}Files with mismatched SHA1 hashes:{ANSI.RESET}")
-            for name in mismatched:
+            print(f"\n{ANSI.BOLD}Files with mismatched hashes:{ANSI.RESET}")
+            for name, algorithm, expected_hash, actual_hash in mismatched:
                 print(
-                    f"  {name}\n"
-                    f"    expected: {expected[name]}\n"
-                    f"    actual:   {computed_for_compare[name]}"
+                    f"  {name} ({algorithm})\n"
+                    f"    expected: {expected_hash}\n"
+                    f"    actual:   {actual_hash}"
                 )
+        if missing_xxh:
+            print(
+                f"\n{ANSI.BOLD}Parquet files without a '{XXH_KEYWORD}' checksum:{ANSI.RESET}"
+            )
+            for name in missing_xxh:
+                print(f"  {name}")
+            print(
+                f"  Parquet files are validated with the '{XXH_KEYWORD}' hash written "
+                f"into their footer, so one is required on both the local sidecar and "
+                f"the uploaded file."
+            )
         if missing_from_cloud:
             print(
                 f"\n{ANSI.BOLD}Files listed in '{sidecar_name}' but missing from the cloud:{ANSI.RESET}"
@@ -337,6 +547,8 @@ def get_metadata_from_prerip(prerip_name: str) -> list[dict] | None:
         current_metadata["file_name"] = file.get_name()
         current_metadata["modified"] = str(file.get_last_modified())
         current_metadata["directory"] = file.get_path()
-        current_metadata["sha1"] = checksums.get(file.get_name())
+        file_checksums = checksums.get(file.get_name(), FileChecksums())
+        current_metadata["sha1"] = file_checksums.sha1
+        current_metadata["xxh"] = file_checksums.xxh
         all_metadata.append(current_metadata)
     return all_metadata

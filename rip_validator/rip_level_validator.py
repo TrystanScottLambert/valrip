@@ -10,6 +10,8 @@ import yaml
 from .status import Status
 from .report import Report
 from .auto_version import get_next_table_versions, sha1_checksum
+from .footer_handler import write_keyword_metadata
+from .xxh_waves import calculate_hash, NO_XXH, XXH_KEYWORD
 
 
 @dataclass
@@ -207,5 +209,11 @@ def build_submission_report(directory: Path) -> None:
             f"# Make sure to upload this file to WAVES/QC/{rip_name} along with the rest of the directory\n"
         )
         for current_file in all_files:
-            checksum = sha1_checksum(directory / current_file)
-            file.write(f"{current_file}: {checksum}\n")
+            full_path = directory / current_file
+            xxh_hash = NO_XXH  # We only want the xxh hash for parquet files.
+            if full_path.suffix == ".parquet":
+                xxh_hash = calculate_hash(full_path)
+                write_keyword_metadata(full_path, XXH_KEYWORD, xxh_hash)
+
+            checksum = sha1_checksum(full_path)
+            file.write(f"{current_file}: {checksum}: {xxh_hash}\n")

@@ -16,6 +16,7 @@ from .WAVES_config import (
 )
 
 WHITESPACE_PADDING_LENGTH = 71
+DOI_ALLOWED_KEYS = {"DOI", "type"}
 
 
 def requires_not_none(field_param: str):
@@ -183,6 +184,34 @@ def validate_coauthors(coauthors: list[str] | None) -> Status:
             f"Some coauthors had warnings:\n\t- {'\n\t- '.join(warn_messages)}"
         )
 
+    return Status.passed()
+
+
+@optional_list("DOIs")
+def validate_dois(DOIs: list[dict] | None) -> Status:
+    """DOIs is optional — None passes. If present, must be a non-empty list
+    of dicts each with non-empty 'DOI' and 'type' fields."""
+
+    errors = []
+    for i, doi in enumerate(DOIs, start=1):
+        if not doi:
+            errors.append(f"DOIs[{i}]: entry is empty.")
+            continue
+        if not isinstance(doi, dict):
+            errors.append(f"DOIs[{i}]: must be a DOI object.")
+            continue
+        if not doi.get("DOI"):
+            errors.append(f"DOIs[{i}]: 'DOI' field is required.")
+        if not doi.get("type"):
+            errors.append(f"DOIs[{i}]: 'type' field is required.")
+        extras = set(doi.keys()) - DOI_ALLOWED_KEYS
+        if extras:
+            errors.append(f"DOIs[{i}]: unexpected fields {sorted(extras)}.")
+
+    if errors:
+        return Status.failed(
+            f"'DOIs' has the following errors:\n\t- {'\n\t- '.join(errors)}"
+        )
     return Status.passed()
 
 
