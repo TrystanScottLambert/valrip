@@ -3,6 +3,7 @@ Module for validating parquet data ensuring tables follow the style standards.
 """
 
 from pathlib import Path
+
 from thefuzz import fuzz
 
 from .filter_check import check_filter
