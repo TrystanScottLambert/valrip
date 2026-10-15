@@ -33,9 +33,7 @@ git clone git@github.com:TrystanScottLambert/valrip.git
 
 # Copy files
 cp -r rip-validator/rip_validator valrip/
-cp rip-validator/requirements.txt valrip/
 cp rip-validator/pyproject.toml valrip/
-cp rip-validator/valrip.spec valrip/
 
 cd valrip
 
