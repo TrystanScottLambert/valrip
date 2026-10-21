@@ -2,6 +2,9 @@
 
 This project defines a Python package which validates a directory containing a DIP and its associated metadata to confirm whether or not it is legal as a RIP.
 
+Main development of this project happens on a pivate 4MOST GitLab so git history on this repo is not reflective.
+Developed by: Dior Etherton, Trystan Lambert
+
 # Usage
 `valrip` is a CLI tool - it is run via a command line interface. 
 See the installation instructions below. 
